@@ -67,8 +67,25 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Same prerelease gate as the release job above, for the mirror-image
+      # reason: with no tag and a `-dev` version, release-plz's initial-release
+      # path opens a "release v0.1.0-dev" PR on every push — a release of the
+      # placeholder version nobody intends to merge. Both jobs wake up when
+      # the `-dev` suffix comes off.
+      - name: Check for a releasable (non-prerelease) version
+        id: ver
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          case "$v" in
+            *-*) echo "release=false" >> "$GITHUB_OUTPUT"
+                 echo "Prerelease version $v — skipping release PR" ;;
+            *)   echo "release=true" >> "$GITHUB_OUTPUT" ;;
+          esac
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.ver.outputs.release == 'true'
       - name: Install release-plz
+        if: steps.ver.outputs.release == 'true'
         # Same binary the release job's release-plz/action downloads (that
         # action pulls cargo-binstall + cargo-semver-checks too; this is the
         # lighter subset). Pinned to the action's default version.
@@ -78,6 +95,7 @@ jobs:
           tar -xzf /tmp/release-plz.tar.gz -C /usr/local/bin release-plz
           release-plz --version
       - name: Open or update the release PR
+        if: steps.ver.outputs.release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || github.token }}
         run: |
