@@ -1,0 +1,80 @@
+# Maintainer: Jordan Dunn <jordan.dunn@nodetwo.io>
+#
+# Template — mirrors saola-panel's contrib/aur/PKGBUILD. The @PKGVER@
+# placeholder and the SKIP checksum are filled in by CI: on each GitHub
+# release, a pkgbuild-release workflow (to be added alongside the 0.1.0
+# release, copied from saola-panel's .github/workflows/pkgbuild-release.yml)
+# substitutes the version from the release tag, computes the tarball's real
+# sha256, and attaches the finished PKGBUILD to the release as an asset.
+# (Not pushed to the AUR — deliberately, for now.)
+#
+# The design goal of this package (README's "Zero-touch install" section):
+# `pacman -U`, log in, done. No `systemctl --user enable`, no PATH or
+# environment fixes — the graphical-session.target.wants symlink below is
+# what replaces the enable step, and the unit's own ConditionEnvironment
+# gate (see contrib/systemd/saola-session.service) keeps that symlink from
+# firing under a non-niri desktop installed on the same machine.
+
+pkgname=saola-session
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc='Idle, sleep and lock wiring for the Saola desktop environment (niri)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/JorDunn/saola-session'
+license=('MIT OR Apache-2.0')
+# Lean by design (CLAUDE.md's dependency survey): zbus is pure Rust, the
+# wayland-rs client stack is pure Rust (no libwayland linkage), so the
+# runtime footprint is just the C runtime plus what the daemon spawns:
+#   saola-lockscreen — the default `locker` command (severity rule 1: a
+#     missing locker means idle- and before-sleep locking silently do
+#     nothing, so it is a hard dependency, not an optdepends).
+#   niri — provides ext-idle-notify-v1 and the `niri msg` power-off action;
+#     also what the unit's ConditionEnvironment gates on.
+depends=('gcc-libs' 'glibc' 'saola-lockscreen' 'niri')
+makedepends=('cargo')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/$pkgname-v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+# GitHub archives of tag saola-session-vX.Y.Z unpack to
+# saola-session-saola-session-vX.Y.Z (repo name + full tag; the leading-"v"
+# strip GitHub applies to v-prefixed tags doesn't fire here).
+_srcdir="$pkgname-$pkgname-v$pkgver"
+
+prepare() {
+  cd "$_srcdir"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_srcdir"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$_srcdir"
+  export RUSTUP_TOOLCHAIN=stable
+  # The state-machine unit tests are this crate's centre of gravity
+  # (CLAUDE.md's testing strategy) — they run against fakes, no D-Bus or
+  # Wayland needed, so they are safe in a chroot/clean build.
+  cargo test --frozen --release
+}
+
+package() {
+  cd "$_srcdir"
+  install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 contrib/systemd/saola-session.service \
+    "$pkgdir/usr/lib/systemd/user/saola-session.service"
+  # The zero-touch piece: a static enablement symlink, the same mechanism
+  # the big DEs use to autostart their session daemons. systemd treats it
+  # exactly like `systemctl --user enable` had been run — for every user,
+  # with no post-install hook and no root-touching-user-homes hack. The
+  # unit's ConditionEnvironment=XDG_CURRENT_DESKTOP=niri is the matching
+  # guard that keeps this from starting under a different DE.
+  install -d "$pkgdir/usr/lib/systemd/user/graphical-session.target.wants"
+  ln -s ../saola-session.service \
+    "$pkgdir/usr/lib/systemd/user/graphical-session.target.wants/saola-session.service"
+  install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+}

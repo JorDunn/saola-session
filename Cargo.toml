@@ -1,0 +1,135 @@
+[package]
+name = "saola-session"
+version = "0.1.0-dev"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# This crate *is* the event loop (Architecture: "main.rs: tokio event loop:
+# wires modules, owns shutdown") — unlike the panel/lockscreen, which get a
+# runtime for free from iced's own `tokio` feature and only ever reach for
+# `spawn_blocking`, nothing here constructs a runtime on our behalf. Features
+# picked for exactly what a headless multi-module daemon needs, no more:
+#   - `rt-multi-thread`: three-plus independent long-lived tasks (sleep's
+#     logind/D-Bus listener, idle's Wayland dispatch, inhibit's D-Bus
+#     service) run concurrently; a `current_thread` runtime would serialize
+#     them behind whichever task last yielded, which is the wrong shape for
+#     a daemon whose whole job is reacting to independent event sources.
+#   - `macros`: `#[tokio::main]` — a proc-macro attribute, not extra runtime
+#     surface; kept for parity with the explicit-code preference (no manual
+#     `Builder` boilerplate to read past).
+#   - `signal`: SIGTERM/SIGINT handling for clean shutdown (Stage 3) — the
+#     inhibitor fd must drop cleanly when systemd stops the unit.
+#   - `time`: `LockPending`'s hard deadline (Architecture's sleep state
+#     machine) and idle-notify re-arm timers both need `sleep`/`timeout`.
+#   - `sync`: channels bridging the synchronous Wayland dispatch loop
+#     (`wayland-client` is not async — Stage 5 will need the panel's
+#     "thread bridge" pattern, per its `libpulse`/`udev` modules) into the
+#     async side, plus the shutdown signal fan-out.
+#   - `process`: `tokio::process` for spawning the locker (never blocks the
+#     event loop, never parses output — Architecture's spawn-hygiene rule)
+#     and for `niri msg action power-off-monitors`.
+# `net` is deliberately not listed directly: zbus's own `tokio` feature (see
+# below) pulls whatever socket I/O it needs, and Cargo unifies features
+# across the graph — declaring it again here would just be a redundant
+# no-op, not a smaller build.
+tokio = { version = "1", default-features = false, features = [
+    "rt-multi-thread",
+    "macros",
+    "signal",
+    "time",
+    "sync",
+    "process",
+] }
+# D-Bus. Survey (2026-08-02) of the two live options:
+#   - `dbus` (diwic/dbus-rs, dual MIT/Apache-2.0) — bindings to the system
+#     `libdbus` C library via `libdbus-sys`. Synchronous by default; async
+#     needs its own `futures`/`futures-util`/`futures-channel` feature stack
+#     layered on top rather than a native tokio integration. Needs libdbus's
+#     headers/pkg-config at build time — the same "extra system build tool"
+#     shape the lockscreen's `pam-sys2` and rejected `minreq` both carry,
+#     just for a dependency this crate leans on constantly (sleep's
+#     `PrepareForSleep`/`Lock` signals, the ScreenSaver shim's whole reason
+#     to exist), not incidentally.
+#   - `zbus` (z-galaxy/zbus, MIT) — chosen. Pure Rust, no libdbus linkage.
+#     Native async with a `tokio` feature that spawns its internal tasks on
+#     the daemon's own runtime (`default-features = false` drops the
+#     default `async-io` executor, exactly the panel's line below and for
+#     the same reason: one runtime, never two). Already the D-Bus crate the
+#     panel depends on (`zbus = { version = "5", default-features = false,
+#     features = ["tokio"] }` in saola-panel/Cargo.toml) — matching it means
+#     every Saola component that talks to the session bus does so through
+#     the same wire implementation, not two independent D-Bus stacks
+#     running side by side on the same machine.
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+# `ext-idle-notify-v1` (Architecture's idle policy module, Stage 5) is a
+# *staging* Wayland protocol — not part of `wayland-protocols`' stable set,
+# so it needs the crate's `staging` feature explicitly; `client` enables the
+# client-side bindings (this daemon is a Wayland client, never a server).
+# Verified directly (2026-08-02): with these two features on, the type
+# lives at `wayland_protocols::ext::idle_notify::v1::client::{
+# ext_idle_notifier_v1::ExtIdleNotifierV1, ext_idle_notification_v1::
+# ExtIdleNotificationV1}` and a throwaway crate referencing both compiles
+# clean — the module path and feature flag are load-bearing for Stage 5 and
+# were not just read off the docs.
+wayland-protocols = { version = "0.32", features = ["staging", "client"] }
+# The client-side Wayland connection itself, underneath the protocol
+# bindings above. Default features only.
+wayland-client = "0.31"
+# `~/.config/saola/session.kdl` (Stage 3). Same crate, same pinned version
+# line as the panel's `panel.kdl` and the lockscreen's `lockscreen.kdl`
+# parsers — the reference Rust KDL implementation, walked by hand rather
+# than through a serde derive, matching both siblings' established
+# convention (see their `config.rs` doc comments for why: precise
+# per-knob warnings on bad values, explicit code over a derived
+# deserializer).
+kdl = "6.7.1"
+# Logging. Survey (2026-08-02) of `tracing` vs the siblings' plain
+# `eprintln!`:
+#   - Both `saola-panel` and `saola-lockscreen` use bare `eprintln!` for
+#     one-off failures — and nothing else; neither pulls in a logging
+#     crate. That is a reasonable choice for an iced app someone is looking
+#     at: the failure is one line among others, and there is a person at
+#     the keyboard who just saw whatever triggered it.
+#   - This crate is different: a headless `systemd --user` daemon with no
+#     UI and no one watching in real time. Architecture's binding severity
+#     order (exposure > blocked-suspend > spurious-lock) has to survive
+#     into `journalctl` as something an operator can filter on after the
+#     fact (`journalctl --user -u saola-session -p warning`), not
+#     undifferentiated stderr lines that all look the same grep-wise.
+#     `tracing`'s `error!`/`warn!`/`info!`/`debug!` macros carry that
+#     severity in the event itself.
+#   - Chosen: `tracing` + `tracing-subscriber` (`fmt` layer, default
+#     features, writes to stderr — which systemd already captures into the
+#     journal for every unit, so no direct journal-socket dependency is
+#     needed) plus the `env-filter` feature for `RUST_LOG`-driven verbosity
+#     without a recompile (useful for Stage 4's live logind checks).
+#     Deliberately **not** `tracing-journald`: it exists and is maintained,
+#     but talks to the journal socket directly, which ties the binary to
+#     running under systemd specifically and buys nothing `journalctl`
+#     reading captured stderr doesn't already give us — an unnecessary
+#     coupling for what Stage 1 needs.
+# No `log` crate: nothing in this dependency tree needs the `log` façade,
+# and `tracing`'s own macros are the only logging surface this crate's code
+# calls directly.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# No `iced`, no `saola-theme`: this daemon has no UI (Architecture — unique
+# among Saola components).
+
+[dev-dependencies]
+# Stage 4's sleep-module tests drive the state machine's `LockPending`
+# deadline and its `LockedHint` confirmation polling, both of which are
+# wall-clock durations (2 s and 50 ms). `test-util` enables
+# `#[tokio::test(start_paused = true)]`, which swaps the timer for a
+# virtual clock that auto-advances whenever every task is parked on one —
+# so a test that exercises the full 2 s deadline runs instantly and
+# deterministically, instead of sleeping for two real seconds and flaking
+# on a loaded machine. A dev-dependency, so the shipped daemon never gets
+# the pausable clock.
+tokio = { version = "1", default-features = false, features = [
+    "test-util",
+    "macros",
+    "rt",
+] }

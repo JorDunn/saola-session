@@ -1,0 +1,56 @@
+# release-plz — per-crate semver bumps, changelogs, tags, and GitHub releases,
+# all derived from Conventional Commits. Docs: https://release-plz.dev
+# Mirrors saola-panel's release-plz.toml (Stage 8's task list: "mirroring
+# the panel's setup") — see that repo's copy for the fuller reasoning behind
+# each setting; this file only notes what differs for this crate.
+
+[workspace]
+# Not published to crates.io.
+publish = false
+# Pre-1.0, `feat:` bumps the minor (0.1 -> 0.2), not the patch — same
+# convention as the panel and saola-theme, so a feature release reads the
+# same across every Saola repo.
+features_always_increment_minor = true
+# release-plz's default version detection asks crates.io for the current
+# released version — for an unpublished crate that never resolves past the
+# first release (see saola-panel's own note and saola-theme commit
+# 957ee68). This crate has no git-dependency-on-an-unpublished-sibling
+# complication the panel's `git_only = true` workaround exists for (no
+# saola-theme dependency at all — this daemon has no UI), so plain
+# crates.io-less detection is fine once this repo's CI is wired the same
+# way the panel's release-pr job is (checking out the latest tag and
+# passing it as `--registry-manifest-path`). Until CI exists, `release-plz`
+# invocations are local/manual per this crate's current stage.
+semver_check = false
+# Per-crate GitHub release + tag when a crate changes. This repo is a
+# single crate, so "per-crate" here just means "this crate".
+git_release_enable = true
+# Pinned rather than release-plz's single-crate-repo default of plain
+# `v{version}`, so tags read the same across every Saola repo
+# (saola-theme-v0.2.0, saola-panel-v0.2.1, saola-session-v0.1.0, …).
+git_tag_name = "{{ package }}-v{{ version }}"
+# One CHANGELOG.md at the repo root (release-plz default for a
+# single-crate repo).
+changelog_update = true
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+"""
+# Map conventional commit types onto Keep a Changelog's categories.
+# Order matters: first match wins. Identical to saola-panel's mapping.
+commit_parsers = [
+  { message = "^security|^fix\\(security\\)", group = "Security" },
+  { message = "^remove", group = "Removed" },
+  { message = "^deprecate", group = "Deprecated" },
+  { message = "^\\w+(\\(.*\\))?!", group = "Changed" }, # breaking changes (`feat!:` etc.)
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf|^refactor", group = "Changed" },
+  { message = "^docs|^chore|^ci|^style|^test|^build", skip = true },
+]

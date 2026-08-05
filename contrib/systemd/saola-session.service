@@ -1,0 +1,84 @@
+# systemd --user unit for saola-session. User-level throughout — this file
+# is installed under ~/.config/systemd/user/ (or, for a distro package, the
+# user-unit search path such as /usr/lib/systemd/user/), never under /etc,
+# and nothing in this repo's install instructions ever runs sudo (CLAUDE.md's
+# sudo rule). See README.md's "Install" section for the exact commands.
+#
+# Every non-default line below traces back to a specific finding in
+# docs/REVIEW-v0.1.md (Stage 7's exposure/silent-failure audit) — the
+# comments name them so a future edit doesn't accidentally revert a fix by
+# "simplifying" this file back toward systemd's defaults.
+
+[Unit]
+Description=Saola session daemon — idle, sleep and lock wiring
+Documentation=https://github.com/JorDunn/saola-session
+# Ordered against the compositor that actually provides the Wayland socket
+# and imports WAYLAND_DISPLAY into the user manager's environment, not just
+# against a target that merely correlates with that having happened
+# (finding E-4). If your compositor's user unit has a different name, change
+# this line to match it — the point is "after the thing that owns the
+# socket", not literally "after niri.service".
+After=graphical-session.target niri.service
+# PartOf (not just After=/WantedBy=): stopping or restarting
+# graphical-session.target (e.g. at logout) also stops this unit, so it
+# never outlives the session it exists to protect.
+PartOf=graphical-session.target
+# Finding E-4: a lost boot-order race (the target is reached before the
+# compositor's socket is actually accepting connections) must not exhaust
+# systemd's default start-rate limiter and leave the unit permanently
+# `failed`. This daemon's absence is a severity-1 condition — retry
+# forever rather than give up after a handful of fast failures.
+# `wayland_thread_main` (src/modules/idle.rs) already retries the initial
+# Wayland connect internally with its own bounded backoff before ever
+# exiting; StartLimitIntervalSec=0 is the belt on top of that braces, for
+# whatever exhausts even that budget (a compositor that never starts,
+# a `WAYLAND_DISPLAY` that is never imported into the user manager, ...).
+StartLimitIntervalSec=0
+# Zero-touch packaging: contrib/PKGBUILD ships a static enablement symlink
+# in /usr/lib/systemd/user/graphical-session.target.wants/, so packaged
+# users never run `systemctl --user enable` — the unit starts with every
+# graphical session, for every user, the moment the package is installed.
+# That symlink is indiscriminate, though: on a machine with a second
+# desktop installed, it would also fire under GNOME/KDE, where this
+# daemon's sleep inhibitor, a second org.freedesktop.ScreenSaver shim, and
+# a spawned saola-lockscreen would all fight the resident DE's own
+# session infrastructure. This line is the gate: start only where the
+# compositor is niri (the value niri's own session sets — checked against
+# the user manager's environment, the same place WAYLAND_DISPLAY lives).
+# A failed condition marks the unit "skipped", not "failed" — it doesn't
+# touch the restart machinery above. If Saola ever sets its own
+# XDG_CURRENT_DESKTOP value, update this line to match it.
+ConditionEnvironment=XDG_CURRENT_DESKTOP=niri
+
+[Service]
+ExecStart=/usr/bin/saola-session
+# Finding E-1/E-2/E-4/L-2: this daemon's failure mode is silent absence, not
+# a loud crash — CLAUDE.md's no-panic rule and this crate's own task-death
+# wiring (main.rs's JoinSet select!) are built specifically so that any
+# module losing its connection, panicking, or hitting an unhandled signal-
+# handler failure takes the whole process down rather than stranding a
+# half-alive daemon. Restart=on-failure is what turns that design into an
+# actual recovery instead of a one-time death.
+Restart=on-failure
+# Finding E-4: systemd's own default (100ms) restarts far faster than a
+# lost boot race resolves and burns the start-rate limiter's budget in
+# under a second. 2s is slow enough that a handful of retries covers a slow
+# compositor start without spamming the journal.
+RestartSec=2s
+# Finding F-2 — the load-bearing line in this file. systemd's default
+# KillMode (control-group) sends SIGTERM/SIGKILL to *every* process left in
+# this unit's cgroup on every stop, including the stop half of every
+# restart above. This daemon spawns the session locker as an ordinary
+# child (src/modules/sleep.rs's CommandLocker — no setsid, no double-fork,
+# no systemd-run --user --scope), so under the default KillMode a daemon
+# restart triggered by any of the other findings in this file would also
+# kill a locker it had just spawned to protect the session. Per
+# saola-lockscreen's own CLAUDE.md, a crashed lock client leaves niri's
+# fallback lock surface up with no way to authenticate — the user is
+# locked out until a VT switch. KillMode=process signals only this unit's
+# main process; a lock screen this daemon spawned survives its parent
+# being restarted.
+KillMode=process
+
+[Install]
+WantedBy=graphical-session.target
