@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-dev](https://github.com/JorDunn/saola-session/releases/tag/saola-session-v0.1.0-dev) - 2026-08-05
+
+### Added
+
+- implement saola-session idle/sleep/lock daemon (stages 1-8)
+
 Pre-1.0, still `0.1.0-dev` in `Cargo.toml`. Tagging `0.1.0` is Jordan's call,
 made after the Jordan-run end-to-end suspend/resume sequence in `README.md`
 passes against this code — see that section for the exact steps. From here
