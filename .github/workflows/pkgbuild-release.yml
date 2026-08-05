@@ -1,0 +1,65 @@
+name: Release PKGBUILD
+
+# Attaches a ready-to-use Arch PKGBUILD to each published GitHub release:
+# fills the version from the release tag into contrib/aur/PKGBUILD, computes
+# the real sha256 of the release tarball, and uploads the result as a release
+# asset. Nothing is pushed to the AUR (deliberately, for now — when that
+# changes, KSXGitHub/github-actions-deploy-aur is the piece to add back).
+# Copied from saola-panel's pkgbuild-release.yml; only the tag prefix differs.
+#
+# Caveat inherited from release-plz.yml: events created with the default
+# workflow token do NOT trigger other workflows, so this only fires
+# automatically when RELEASE_PLZ_TOKEN (a PAT) is set. workflow_dispatch with
+# the tag name is the manual fallback either way.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach to (e.g. saola-session-v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve release tag
+        id: tag
+        env:
+          TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+        run: |
+          case "$TAG" in
+            saola-session-v*) ;;
+            *) echo "Not a saola-session release tag: $TAG" >&2; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "pkgver=${TAG#saola-session-v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Generate PKGBUILD
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          PKGVER: ${{ steps.tag.outputs.pkgver }}
+        run: |
+          # Checksum the same tarball the PKGBUILD's source= line points at,
+          # so what ships is exactly what makepkg will verify.
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          sha=$(curl -sSfL "$url" | sha256sum | cut -d' ' -f1)
+          sed -e "s/@PKGVER@/$PKGVER/" \
+              -e "s/^sha256sums=.*/sha256sums=('$sha')/" \
+              contrib/aur/PKGBUILD > PKGBUILD
+          bash -n PKGBUILD
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: gh release upload "$TAG" PKGBUILD --clobber

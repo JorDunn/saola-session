@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # No APT_BUILD_DEPS, unlike both siblings (panel: pulse/xkbcommon/wayland/
+  # udev; lockscreen: pam/xkbcommon/wayland): this crate links no system
+  # libraries at all. zbus is pure Rust (no libdbus) and wayland-client 0.31
+  # uses wayland-backend's pure-Rust wire implementation by default (no
+  # libwayland) — the same fact the PKGBUILD's depends= line rests on. The
+  # only `-sys` crates in Cargo.lock are other-platform (windows-sys, js-sys)
+  # or unused-by-default (wayland-sys behind the system backend feature).
+  #
+  # Also unlike the siblings: no feature matrix (the crate has no cargo
+  # features) and no release-guard job (no dev-unlock equivalent to fence).
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build

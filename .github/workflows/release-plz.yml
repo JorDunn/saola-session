@@ -1,0 +1,78 @@
+name: Release-plz
+
+permissions:
+  pull-requests: write
+  contents: write
+
+on:
+  push:
+    branches: [main]
+
+# Never run two release-plz jobs at once — they push commits and tags.
+concurrency:
+  group: release-plz
+  cancel-in-progress: false
+
+jobs:
+  # Tags + GitHub releases for any crate whose version was bumped on main
+  # (i.e. after a release PR merges).
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          # RELEASE_PLZ_TOKEN is an optional fine-grained PAT (contents +
+          # pull-requests: write). Without it the default token works, but
+          # PRs it opens won't trigger the CI workflow.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || github.token }}
+
+  # Opens/updates the release PR: version bump + changelog entry, derived from
+  # conventional commits since the last tag.
+  #
+  # Runs the release-plz CLI directly instead of release-plz/action because we
+  # must pass --registry-manifest-path: this crate is not on crates.io, so the
+  # default (registry-based) version detection would conclude "already
+  # up-to-date" forever after the first tag (release-plz.toml's semver_check
+  # NOTE anticipates exactly this wiring). A checkout of the latest tag is the
+  # released baseline instead. Copied from saola-panel's release-plz.yml; only
+  # the tag --match pattern differs. (Unlike the panel, this crate has no
+  # unpublished git dependency — but the not-on-crates.io problem is the same.)
+  release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install release-plz
+        # Same binary the release job's release-plz/action downloads (that
+        # action pulls cargo-binstall + cargo-semver-checks too; this is the
+        # lighter subset). Pinned to the action's default version.
+        run: |
+          curl -sSfL -o /tmp/release-plz.tar.gz \
+            https://github.com/release-plz/release-plz/releases/download/release-plz-v0.3.160/release-plz-x86_64-unknown-linux-gnu.tar.gz
+          tar -xzf /tmp/release-plz.tar.gz -C /usr/local/bin release-plz
+          release-plz --version
+      - name: Open or update the release PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN || github.token }}
+        run: |
+          # release-pr creates the release commit, which needs a git identity.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          args=()
+          # Baseline = the latest release tag, checked out into a worktree.
+          # Before the first release no tag exists and release-plz's
+          # initial-release path handles it without a baseline.
+          tag=$(git describe --tags --abbrev=0 --match 'saola-session-v*' 2>/dev/null || true)
+          if [ -n "$tag" ]; then
+            git worktree add --detach ../baseline "$tag"
+            args+=(--registry-manifest-path ../baseline/Cargo.toml)
+          fi
+          release-plz release-pr --git-token "$GITHUB_TOKEN" "${args[@]}"
