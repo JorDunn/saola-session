@@ -5,13 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-08-05
 
-Pre-1.0, still `0.1.0-dev` in `Cargo.toml`. Tagging `0.1.0` is Jordan's call,
-made after the Jordan-run end-to-end suspend/resume sequence in `README.md`
-passes against this code — see that section for the exact steps. From here
-on, `release-plz` (`release-plz.toml`) manages version bumps and this file's
-released sections from Conventional Commits.
+Initial release. Tagged after the Jordan-run end-to-end suspend/resume
+sequence in `README.md` passed on real hardware: three suspend round trips
+across 2026-08-03 → 2026-08-05, the lock confirmed (`LockedHint=true`,
+261–328ms) before each sleep, and the locker on screen at the moment of
+resume. From here on, `release-plz` (`release-plz.toml`) manages version
+bumps and this file's released sections from Conventional Commits.
 
 ### Fixed
 

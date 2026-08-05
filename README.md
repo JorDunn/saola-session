@@ -428,8 +428,11 @@ running this sequence; everything upstream of it is read-only or unit-tested.
    result wasn't a one-off.
 
 **Only after step 5 succeeds — twice, per the note above — is tagging
-`0.1.0` Jordan's call to make.** The version in `Cargo.toml` stays
-`0.1.0-dev` until then; see `CHANGELOG.md` and `release-plz.toml`.
+`0.1.0` Jordan's call to make.** That gate passed on 2026-08-05 (three
+clean suspend round trips, lock confirmed before sleep each time, locker
+on screen at resume) and `0.1.0` was tagged — see `CHANGELOG.md` and
+`release-plz.toml`. The sequence above remains the recipe for verifying
+any future release on real hardware.
 
 ## Credits
 
