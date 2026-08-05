@@ -22,8 +22,26 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # Skip prerelease versions — a divergence from the siblings, which were
+      # wired up at real versions. This crate sits at `0.1.0-dev` until the
+      # Jordan-run suspend/resume test passes (CHANGELOG's Unreleased note:
+      # "Tagging 0.1.0 is Jordan's call"), and without this gate release-plz
+      # tags and publishes `saola-session-v0.1.0-dev` on the first push. When
+      # the version loses its `-dev` suffix, this job tags and releases it.
+      - name: Check for a releasable (non-prerelease) version
+        id: ver
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          case "$v" in
+            *-*) echo "release=false" >> "$GITHUB_OUTPUT"
+                 echo "Prerelease version $v — skipping release" ;;
+            *)   echo "release=true" >> "$GITHUB_OUTPUT" ;;
+          esac
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.ver.outputs.release == 'true'
       - uses: release-plz/action@v0.5
+        if: steps.ver.outputs.release == 'true'
         with:
           command: release
         env:
