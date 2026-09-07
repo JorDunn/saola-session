@@ -119,7 +119,7 @@ const STARTUP_CONNECT_BACKOFF: Duration = Duration::from_secs(2);
 
 /// [`Duration`] → the `u32` milliseconds
 /// `ext_idle_notifier_v1.get_idle_notification`'s `timeout` argument wants.
-/// `config.rs` already restricts `session.kdl`'s timeouts to positive
+/// `config.rs` already restricts `session.toml`'s timeouts to positive
 /// values, but this crate's no-panic rule means an operator writing an
 /// enormous number (u32 milliseconds tops out around 49.7 days) must
 /// saturate to the protocol's maximum, not panic or wrap.
@@ -235,7 +235,7 @@ enum Arm {
 
 /// Architecture's idle policy state machine. Owns nothing external — no
 /// Wayland proxy, no `SessionLocker`, no clock. Just two optional [`Arm`]s
-/// (`None` means that target is disabled — `session.kdl` never configured a
+/// (`None` means that target is disabled — `session.toml` never configured a
 /// timeout for it, so it can never appear as an event and could never fire
 /// even if it somehow did) and the current inhibit-active flag.
 pub struct IdlePolicy {
@@ -245,7 +245,7 @@ pub struct IdlePolicy {
 }
 
 impl IdlePolicy {
-    /// Builds the machine from `session.kdl`'s `idle { }` node. A target
+    /// Builds the machine from `session.toml`'s `[idle]` table. A target
     /// starts `Some(Arm::Armed)` if its timeout is `Some`, `None`
     /// (permanently disabled) otherwise — mirroring `config.rs`'s own
     /// "`None` means disabled, not some fallback timeout" rule.
@@ -755,8 +755,8 @@ pub async fn run(
 ) {
     if idle.lock_after.is_none() && idle.power_off_after.is_none() {
         info!(
-            "saola-session: idle policy disabled (no lock-after or power-off-after in \
-             session.kdl) — not opening a Wayland connection"
+            "saola-session: idle policy disabled (no lock-after-secs or power-off-after-secs \
+             in session.toml) — not opening a Wayland connection"
         );
         let _ = shutdown.changed().await;
         return;

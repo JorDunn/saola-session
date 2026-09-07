@@ -30,7 +30,7 @@ enum Cli {
     /// `--version` (or `-V`): print the crate version and exit. No config
     /// load, no logging setup, no runtime — as cheap as this binary gets.
     Version,
-    /// `--check-config`: load `session.kdl` exactly as the real daemon
+    /// `--check-config`: load `session.toml` exactly as the real daemon
     /// would, print the resolved [`SessionConfig`], and exit. Stage 8's
     /// README points operators at this for validating a config edit
     /// without restarting the `systemd --user` unit.

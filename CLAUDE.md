@@ -37,7 +37,7 @@ lockscreen's layout:
 ```
 src/
 ├── main.rs                 # tokio event loop: wires modules, owns shutdown
-├── config.rs                # session.kdl: timeouts, locker command, toggles
+├── config.rs                # session.toml: timeouts, locker command, toggles
 └── modules/
     ├── mod.rs
     ├── sleep.rs              # Stage 4 — logind: inhibitor, PrepareForSleep, Lock signal
@@ -185,8 +185,19 @@ documents the sequence for, never something an agent triggers itself.
     directly (not just read off docs): with those features, the types resolve at
     `wayland_protocols::ext::idle_notify::v1::client::{ext_idle_notifier_v1::
     ExtIdleNotifierV1, ext_idle_notification_v1::ExtIdleNotificationV1}`.
-  - **`kdl = "6.7.1"`** — same version line as both siblings, same hand-walked
-    parse style (no serde derive).
+  - **`toml = "0.9"` (2026-09-07 amendment — replaces Stage 1's `kdl = "6.7.1"`).**
+    Stage 1 picked KDL to match the siblings, and that was right then. The family
+    has since moved to TOML — `saola-capture` first (2026-08-08), then
+    `saola-greeter` (13137ec, 2026-09-07) and `saola-notifications`, with
+    `saola-panel` and `saola-lockscreen` migrating in parallel — so the same
+    "one config format across the family" argument now points at TOML. Pinned to
+    the `0.9` line, not the newer `1.x`, because every sibling is: this daemon
+    has no `saola-theme` dependency to unify with, so the pin buys one version
+    line across the family rather than a smaller tree here. The parse style does
+    not change: `toml::Table` is hand-walked (no serde derive), so one bad knob
+    warns by name and degrades alone — a derived deserializer would fail the
+    whole document at once, `lock-before-sleep` included, which the severity
+    order forbids. Not `toml_edit`: this module never writes the file.
   - **Logging: `tracing` + `tracing-subscriber`, not the siblings' `eprintln!`.**
     Both siblings are interactive iced apps with someone watching the screen, where
     a bare `eprintln!` is one line among others a person just saw happen. This is a

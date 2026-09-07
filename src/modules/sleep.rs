@@ -113,7 +113,7 @@ const INHIBIT_MODE: &str = "delay";
 /// uncached binary) buys nothing against severity rule 2, which logind's
 /// own cap already makes systemically impossible regardless of this
 /// constant. 4 s leaves 1 s of margin for the release itself (a `close()`),
-/// which is ample. It is a constant rather than a `session.kdl` knob on
+/// which is ample. It is a constant rather than a `session.toml` knob on
 /// purpose: Stage 3's schema is canonical and Stage 8's README documents it
 /// verbatim, and this value is not something an operator can usefully tune
 /// — it is bounded above by logind's cap and below by how fast the locker
@@ -509,7 +509,7 @@ pub enum EventOutcome {
 pub struct SleepMachine {
     logind: Arc<dyn Logind>,
     locker: SessionLocker,
-    /// `lock-before-sleep` from `session.kdl`. When false we never take an
+    /// `lock-before-sleep` from `session.toml`. When false we never take an
     /// inhibitor and never act on `PrepareForSleep` — but we still honor the
     /// `Lock` signal, which is a separate concern the operator did not turn
     /// off.
@@ -563,7 +563,7 @@ impl SleepMachine {
     pub async fn start(&mut self) {
         if !self.lock_before_sleep {
             info!(
-                "saola-session: lock-before-sleep is disabled in session.kdl — not taking a \
+                "saola-session: lock-before-sleep is disabled in session.toml — not taking a \
                  logind delay inhibitor; the logind Lock signal is still honored"
             );
             return;

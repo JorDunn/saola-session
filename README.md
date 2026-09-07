@@ -127,31 +127,36 @@ steps:
 The upshot: the manual sections above exist for hacking on this repo; end
 users of the Saola DE should only ever meet the package.
 
-## Configuration — `~/.config/saola/session.kdl`
+## Configuration — `~/.config/saola/session.toml`
 
 Entirely optional; every knob has a built-in default; the file is read once
 at startup (no live reload — a `systemctl --user restart` is cheap enough
-that live-reload isn't worth the complexity). Resolved the same way as the
-panel's `panel.kdl` and the lockscreen's `lockscreen.kdl`: `$SAOLA_CONFIG_DIR`,
-then `$XDG_CONFIG_HOME/saola`, then `~/.config/saola`, in that order (an
-empty environment variable is treated as unset, same as the XDG spec's own
-rule).
+that live-reload isn't worth the complexity). The daemon looks in
+`$SAOLA_CONFIG_DIR`, then `$XDG_CONFIG_HOME/saola`, then `~/.config/saola`,
+in that order (an empty environment variable is treated as unset, same as
+the XDG spec's own rule). This is the same TOML format and the same search
+order as the other Saola components.
 
-```kdl
-idle {
-    lock-after 5            // bare integer = whole minutes; omit to disable idle-lock
-    power-off-after "90s"   // or a quoted duration: "30s", "5m"; omit to disable
-}
-locker "saola-lockscreen"   // default; any command to spawn — no shell, plain argv
-lock-before-sleep #true     // default
+```toml
+# ~/.config/saola/session.toml — every key optional; omit the file for defaults.
+locker = "saola-lockscreen"   # default; any command to spawn — no shell, plain argv
+lock-before-sleep = true      # default
+
+[idle]
+lock-after-secs = 300         # whole seconds; omit to disable the idle lock
+power-off-after-secs = 600    # whole seconds; omit to disable output power-off
 ```
+
+Keep the two top-level keys **above** the `[idle]` header. In TOML, each key
+that comes after a table header is part of that table. A `lock-before-sleep`
+below `[idle]` is thus `idle.lock-before-sleep`, a key the daemon ignores.
 
 | Knob | Default | Notes |
 |---|---|---|
-| `idle.lock-after` | disabled | Idle timeout before spawning the locker. Bare integer = minutes (`lock-after 5`), or a quoted string with an explicit unit suffix for sub-minute values (`lock-after "30s"`, useful mainly for testing against a nested compositor). Absent means idle-lock is **disabled**, not "some fallback timeout" — the daemon does not even open a Wayland connection if both `idle` timeouts are absent. |
-| `idle.power-off-after` | disabled | Same value forms as `lock-after`, independent timeout, independent of whether `lock-after` is set. Runs `niri msg action power-off-monitors` on expiry. |
-| `locker` | `"saola-lockscreen"` | The command spawned for every lock trigger (idle timeout, before-sleep, `loginctl lock-session`) — one spawn implementation, reused by all three. Resolved via `$PATH` at spawn time like any bare command. Split on whitespace only — no shell, no quoting, so a locker path containing spaces is not expressible; this is deliberate (Architecture: a config file must not become a code-execution surface). |
-| `lock-before-sleep` | `#true` | Whether the before-sleep module spawns the locker on `PrepareForSleep`/`Lock` at all. **Booleans use KDL v2's `#true`/`#false` keyword form, not bare `true`/`false`** — this crate pins plain `kdl = "6.7.1"`, whose default parser is KDL v2, and a bare `lock-before-sleep false` fails to parse rather than reading as a boolean. |
+| `idle.lock-after-secs` | disabled | Idle timeout before the daemon spawns the locker, in whole seconds. Absent means the idle lock is **disabled**, not "some fallback timeout" — the daemon does not even open a Wayland connection if both `[idle]` timeouts are absent. |
+| `idle.power-off-after-secs` | disabled | Same value form as `lock-after-secs`, and an independent timeout: one does not imply or disable the other. Runs `niri msg action power-off-monitors` on expiry. |
+| `locker` | `"saola-lockscreen"` | The command spawned for every lock trigger (idle timeout, before-sleep, `loginctl lock-session`) — one spawn implementation, reused by all three. Resolved via `$PATH` at spawn time like any bare command. Split on whitespace only — no shell, no quoting, so a locker path that contains spaces is not expressible; this is deliberate (Architecture: a config file must not become a code-execution surface). |
+| `lock-before-sleep` | `true` | Whether the before-sleep module spawns the locker on `PrepareForSleep`/`Lock` at all. |
 
 **Resilience rule, stated once because it matters more than the schema
 itself:** no malformed config can ever silence before-sleep locking. A
@@ -160,19 +165,34 @@ missing file, an unparseable document, or a single bad knob all fall back to
 idle-lock (which is opt-in and defaults to disabled anyway) but never the
 before-sleep concern, per the severity order above.
 
+### Migrating from `session.kdl`
+
+Version 0.1.0 and before used `~/.config/saola/session.kdl`. Each key keeps
+its name in `session.toml`. There is one difference. The two idle timeouts
+are in **seconds**, and their names include `-secs`. The unit is in the name
+to make the change easy to see. In KDL, `lock-after 5` was five minutes. In
+TOML, the same timeout is `lock-after-secs = 300`. The daemon no longer
+accepts the `"30s"` and `"5m"` string forms — give the seconds as an integer.
+A boolean is `true` or `false`, not KDL's `#true` or `#false`.
+
+If the daemon finds a `session.kdl` but no `session.toml`, the daemon writes
+one warning to the journal. The warning names the two paths. The daemon then
+starts with its defaults. The daemon does not read the KDL file. Delete that
+file after you copy its settings.
+
 ### Validating a config edit — `--check-config`
 
 ```bash
 saola-session --check-config
 ```
 
-Loads `session.kdl` through the exact same loader the real daemon uses and
+Loads `session.toml` through the exact same loader the real daemon uses and
 prints the resolved, effective config — including every per-knob fallback —
 then exits. Any problem in the file (an unparseable document, a bad
-`locker`, a `lock-after` that isn't a positive whole number of minutes or a
-suffixed duration string) is printed as a warning on stderr before the
-config, so a bad edit shows up as an explicit complaint rather than a
-silently-defaulted value you have to infer. Set `RUST_LOG=debug` for more
+`locker`, a `lock-after-secs` that isn't a positive whole number of seconds)
+is printed as a warning on stderr before the config, so a bad edit shows up
+as an explicit complaint rather than a silently-defaulted value you have to
+infer. Set `RUST_LOG=debug` for more
 detail; `RUST_LOG` unset defaults `--check-config` to `warn`-level output
 (quieter than the real daemon's `info` default, since this is a
 human-facing command meant to show only the config plus its complaints).
@@ -206,7 +226,7 @@ systemctl --user daemon-reload
 # 3. If you ever added the recommended swayidle spawn-at-startup line,
 #    remove it from ~/.config/niri/config.kdl:
 #      spawn-at-startup "swayidle" "-w" "timeout" "300" "saola-lockscreen"
-# saola-session's own idle.lock-after (session.kdl, above) replaces it —
+# saola-session's own idle.lock-after-secs (session.toml, above) replaces it —
 # swayidle itself can stay installed or be removed, your call; this daemon
 # doesn't care either way, it just stops needing swayidle for locking.
 ```
@@ -306,7 +326,7 @@ repo) applies it there.
       > ~/.config/environment.d/50-local-bin.conf
   ```
 
-  The narrow alternative is an absolute path in `session.kdl`
+  The narrow alternative is an absolute path in `session.toml`
   (`locker "/home/jordan/.local/bin/saola-lockscreen"`), but fixing the
   user manager's `PATH` also covers every other user unit that shells out
   to something in `~/.local/bin`.
@@ -378,7 +398,7 @@ running this sequence; everything upstream of it is read-only or unit-tested.
    `WHY=Lock the session before sleep`. If this is empty, check
    `journalctl --user -u saola-session -p warning` — either logind was
    unreachable at startup (should self-heal within `RECONNECT_INTERVAL`,
-   30s) or `lock-before-sleep #false` is set in `session.kdl`.
+   30s) or `lock-before-sleep = false` is set in `session.toml`.
 
 3. **`loginctl lock-session`** — proves the `Lock` signal path and, per the
    known-limitations note above, must be checked with the daemon running
@@ -401,15 +421,16 @@ running this sequence; everything upstream of it is read-only or unit-tested.
    sleep path:
 
    ```bash
-   # Temporarily, in ~/.config/saola/session.kdl:
-   #   idle { lock-after "20s" }
+   # Temporarily, in ~/.config/saola/session.toml:
+   #   [idle]
+   #   lock-after-secs = 20
    systemctl --user restart saola-session.service
    ```
 
    Stop touching the keyboard/mouse for 20 seconds. Expect the locker to
    spawn and lock the screen; unlock, wait past the timeout again with no
    activity, and confirm it fires again (the re-arm-on-`Resumed` behavior).
-   Revert `session.kdl` and restart the unit when done.
+   Revert `session.toml` and restart the unit when done.
 
 5. **Only after 1–4 all pass**, the real suspend/resume round trip — the one
    step this whole plan has deliberately never performed:

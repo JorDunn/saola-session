@@ -1,0 +1,377 @@
+name: saola-session
+# Technical Names — product, protocol, tool, and format names; CLI flags and
+# subcommands; config-file keys; file paths; and other domain nouns this
+# project's docs use as fixed technical vocabulary rather than general
+# English. See ~/.claude/CLAUDE.md's Style Guide Links entry for the ste100
+# invocation this file backs. Format copied from
+# saola-greeter/.ste-glossary.yml.
+#
+# Added 2026-09-07 with the session.kdl → session.toml config migration: the
+# README had never been checked before, so this file starts from the
+# technical vocabulary the document already uses. It is not yet complete —
+# the README still reports residual findings against general English that a
+# separate prose pass must clear.
+technical_nouns:
+  # ---- The Saola family ----
+  - word: saola
+    approved_meaning: The Saola desktop environment and its project family name.
+  - word: Saola
+    approved_meaning: The Saola desktop environment and its project family name.
+  - word: saola-session
+    approved_meaning: This project — the idle, sleep, and lock daemon for the Saola desktop environment.
+  - word: saola-lockscreen
+    approved_meaning: The Saola session locker, the program this daemon spawns to lock the screen.
+  - word: saola-panel
+    approved_meaning: The Saola status bar, the source of this project's repo-layout conventions.
+  - word: saola-theme
+    approved_meaning: The Saola design-system crate, which this project does not use.
+  - word: lockscreen
+    approved_meaning: Short name for saola-lockscreen, the Saola session locker.
+  - word: panel
+    approved_meaning: Short name for saola-panel, the Saola status bar.
+  - word: locker
+    approved_meaning: The program that locks the session; also the config key that names it.
+  - word: keybind
+    approved_meaning: A key combination the compositor maps to a command.
+  # ---- Platform, protocols, and system services ----
+  - word: Linux
+    approved_meaning: The Linux operating system.
+  - word: niri
+    approved_meaning: The niri Wayland compositor this project runs under.
+  - word: compositor
+    approved_meaning: The program that draws and arranges windows on a Wayland desktop.
+  - word: Wayland
+    approved_meaning: The Wayland display protocol.
+  - word: wayland
+    approved_meaning: The Wayland display protocol.
+  - word: swayidle
+    approved_meaning: An idle-timeout program this daemon replaces.
+  - word: systemd
+    approved_meaning: The Linux service manager.
+  - word: systemctl
+    approved_meaning: The command that controls systemd units.
+  - word: journalctl
+    approved_meaning: The command that reads the systemd journal.
+  - word: journal
+    approved_meaning: The systemd log store that this daemon's messages go to.
+  - word: logind
+    approved_meaning: The systemd service that owns login sessions, sleep, and lock signals.
+  - word: loginctl
+    approved_meaning: The command that controls logind sessions.
+  - word: pgrep
+    approved_meaning: The command that finds a running process by name.
+  - word: grep
+    approved_meaning: The command that finds lines of text that match a pattern.
+  - word: echo
+    approved_meaning: The command that writes its arguments to the output.
+  - word: mkdir
+    approved_meaning: The command that makes a directory.
+  - word: rm
+    approved_meaning: The command that removes a file.
+  - word: bash
+    approved_meaning: The Bash command-line shell.
+  - word: shell
+    approved_meaning: The command-line program that runs commands.
+  - word: sudo
+    approved_meaning: The command that runs another command as the root user.
+  - word: stderr
+    approved_meaning: The output stream a program writes its error messages to.
+  - word: symlink
+    approved_meaning: A file that points at another file.
+  - word: cgroup
+    approved_meaning: The Linux facility systemd uses to group and kill a unit's processes.
+  - word: socket
+    approved_meaning: The connection endpoint two programs use to exchange data.
+  - word: daemon
+    approved_meaning: A program that runs in the background with no user interface.
+  - word: distro
+    approved_meaning: A Linux distribution.
+  - word: PKGBUILD
+    approved_meaning: The Arch Linux package recipe in this repo's contrib directory.
+  - word: aur
+    approved_meaning: The Arch User Repository, where this project's package recipe goes.
+  - word: DEs
+    approved_meaning: Desktop environments.
+  - word: desktop
+    approved_meaning: The desktop environment a user logs in to.
+  # ---- D-Bus and the interfaces this daemon uses ----
+  - word: D-Bus
+    approved_meaning: The message bus Linux desktop programs use to talk to each other.
+  - word: dbus
+    approved_meaning: The message bus Linux desktop programs use to talk to each other.
+  - word: libdbus
+    approved_meaning: The C library implementation of D-Bus, which this project does not link.
+  - word: zbus
+    approved_meaning: The pure-Rust D-Bus library this project uses.
+  - word: freedesktop
+    approved_meaning: The freedesktop.org group that specifies these desktop interfaces.
+  - word: org.freedesktop
+    approved_meaning: The name prefix of the freedesktop.org D-Bus interfaces.
+  - word: ScreenSaver
+    approved_meaning: The org.freedesktop.ScreenSaver D-Bus interface apps use to suppress idle.
+  - word: PrepareForSleep
+    approved_meaning: The logind signal that tells programs the machine is about to sleep.
+  - word: LockedHint
+    approved_meaning: The logind session property that reports whether the session is locked.
+  - word: NameOwnerChanged
+    approved_meaning: The D-Bus signal that reports a bus name changing owner.
+  - word: InhibitDelayMaxUSec
+    approved_meaning: The logind setting that caps how long a delay inhibitor can hold up sleep.
+  - word: inhibitor
+    approved_meaning: A logind lock that delays or blocks sleep.
+  - word: inhibitors
+    approved_meaning: Logind locks that delay or block sleep.
+  - word: shim
+    approved_meaning: A small service this daemon supplies in place of one the compositor may not have.
+  - word: ext-idle-notify-v1
+    approved_meaning: The Wayland protocol that tells a client how long the user has been idle.
+  - word: ext
+    approved_meaning: Part of the protocol name ext-idle-notify-v1.
+  # ---- Config file, keys, and paths ----
+  - word: session.toml
+    approved_meaning: This project's config file.
+  - word: session.kdl
+    approved_meaning: This project's config file before 2026-09-07, no longer read.
+  - word: config.kdl
+    approved_meaning: The niri compositor's own config file.
+  - word: toml
+    approved_meaning: The TOML config-file format.
+  - word: TOML
+    approved_meaning: The TOML config-file format.
+  - word: kdl
+    approved_meaning: The KDL config-file format, which this project no longer uses.
+  - word: KDL
+    approved_meaning: The KDL config-file format, which this project no longer uses.
+  - word: config
+    approved_meaning: The config file, or the settings this daemon reads from it.
+  - word: knob
+    approved_meaning: One setting in the config file.
+  - word: knobs
+    approved_meaning: The settings in the config file.
+  - word: lock-after-secs
+    approved_meaning: The config key that sets the idle-lock timeout, in seconds.
+  - word: power-off-after-secs
+    approved_meaning: The config key that sets the output power-off timeout, in seconds.
+  - word: lock-before-sleep
+    approved_meaning: The config key that turns before-sleep locking on or off.
+  - word: idle
+    approved_meaning: The config table that holds the two idle timeouts; also the state of no user input.
+  - word: secs
+    approved_meaning: Part of the key names lock-after-secs and power-off-after-secs; it means seconds.
+  - word: lock_before_sleep
+    approved_meaning: The Rust field that holds the lock-before-sleep setting.
+  - word: SAOLA_CONFIG_DIR
+    approved_meaning: The environment variable that names the Saola config directory.
+  - word: XDG_CONFIG_HOME
+    approved_meaning: The standard environment variable that names the user config directory.
+  - word: XDG_CURRENT_DESKTOP
+    approved_meaning: The environment variable that names the running desktop environment.
+  - word: WAYLAND_DISPLAY
+    approved_meaning: The environment variable that names the Wayland connection.
+  - word: RUST_LOG
+    approved_meaning: The environment variable that sets how much this daemon logs.
+  - word: RECONNECT_INTERVAL
+    approved_meaning: This project's constant for how long to wait before it tries logind again.
+  - word: PATH
+    approved_meaning: The environment variable that lists where to look for a command.
+  # ---- systemd unit vocabulary ----
+  - word: saola-session.service
+    approved_meaning: This project's systemd user unit.
+  - word: saola-lock-before-sleep.service
+    approved_meaning: The interim shell-script unit this daemon replaces.
+  - word: graphical-session.target
+    approved_meaning: The systemd target that is reached when the graphical session is up.
+  - word: ExecStart
+    approved_meaning: The systemd unit setting that names the program to run.
+  - word: PartOf
+    approved_meaning: The systemd unit setting that ties one unit's lifetime to another's.
+  - word: KillMode
+    approved_meaning: The systemd unit setting that says which processes to kill when the unit stops.
+  - word: ConditionEnvironment
+    approved_meaning: The systemd unit setting that runs a unit only when a variable has a given value.
+  - word: unit
+    approved_meaning: One systemd service definition.
+  - word: enablement
+    approved_meaning: The step that makes systemd start a unit automatically.
+  # ---- Rust, build, and repo vocabulary ----
+  - word: Rust
+    approved_meaning: The Rust programming language.
+  - word: rust
+    approved_meaning: The Rust programming language.
+  - word: cargo
+    approved_meaning: The Rust package manager and build tool.
+  - word: clippy
+    approved_meaning: The Rust lint tool cargo runs.
+  - word: fmt
+    approved_meaning: Part of the command cargo fmt, this project's code-formatting check.
+  - word: crate
+    approved_meaning: One Rust package.
+  - word: unwrap
+    approved_meaning: The Rust method this project's code must never call on a runtime path.
+  - word: expect
+    approved_meaning: The Rust method this project's code must never call on a runtime path.
+  - word: panic
+    approved_meaning: The Rust failure that stops a program immediately.
+  - word: argv
+    approved_meaning: The list of arguments a program is started with.
+  - word: runtime
+    approved_meaning: The code paths that run while the daemon is doing its job.
+  - word: git
+    approved_meaning: The version-control tool this project uses.
+  - word: GitHub
+    approved_meaning: The website that hosts this project's repository.
+  - word: repo
+    approved_meaning: This project's source repository.
+  - word: README.md
+    approved_meaning: This file.
+  - word: CLAUDE.md
+    approved_meaning: This repo's file of engineering rules for agents.
+  - word: PLAN.md
+    approved_meaning: This repo's file of design rationale and build stages.
+  - word: CHANGELOG.md
+    approved_meaning: This repo's file of released changes.
+  - word: SIGNALS.md
+    approved_meaning: This repo's file of measured logind signal behavior.
+  - word: LICENSE
+    approved_meaning: This repo's license file.
+  - word: MIT
+    approved_meaning: The MIT software license.
+  - word: Apache
+    approved_meaning: The Apache 2.0 software license.
+  - word: contrib
+    approved_meaning: This repo's directory of packaging and unit files.
+  - word: docs
+    approved_meaning: This repo's directory of design documents.
+  - word: rustfmt.toml
+    approved_meaning: This repo's code-formatting settings file.
+  - word: rust-toolchain.toml
+    approved_meaning: This repo's file that pins the Rust version.
+  - word: release-plz.toml
+    approved_meaning: This repo's release-automation settings file.
+  - word: JorDunn
+    approved_meaning: The GitHub account that owns this project.
+  - word: Jordan
+    approved_meaning: The author of this project.
+  - word: YaLTeR
+    approved_meaning: The GitHub account that owns the niri compositor.
+  - word: Firefox
+    approved_meaning: The Firefox web browser, the usual program that asks the desktop to suppress idle.
+  # ---- This daemon's own concepts ----
+  - word: timeout
+    approved_meaning: How long to wait before an action starts.
+  - word: timeouts
+    approved_meaning: The times to wait before an action starts.
+  - word: idle-lock
+    approved_meaning: The action that locks the session after the user is idle.
+  - word: before-sleep
+    approved_meaning: Said of the lock that must happen before the machine sleeps.
+  - word: sleep
+    approved_meaning: The low-power state the machine goes into; also the logind concept of that state.
+  - word: spawn
+    approved_meaning: To start a new process.
+  - word: policy
+    approved_meaning: The rules this daemon applies to idle events.
+  - word: module
+    approved_meaning: One source file of this project, holding one of its three concerns.
+  - word: state machine
+    approved_meaning: The set of states this daemon moves between, and the moves it permits.
+  - word: severity
+    approved_meaning: How bad a failure is, on this project's ranked list.
+  - word: loader
+    approved_meaning: The code that reads and interprets the config file.
+  - word: fallback
+    approved_meaning: The value used when the config gives no usable one.
+  - word: startup
+    approved_meaning: The time when the daemon starts.
+  - word: shutdown
+    approved_meaning: The time when the daemon stops.
+  - word: schema
+    approved_meaning: The set of keys the config file can hold.
+  - word: interim
+    approved_meaning: Said of the shell-script wiring that this daemon replaces.
+  # ---- TOML data-model terms, used here as format vocabulary ----
+  - word: key
+    approved_meaning: The name on the left of a TOML assignment.
+  - word: keys
+    approved_meaning: The names on the left of TOML assignments.
+  - word: table
+    approved_meaning: A named group of TOML keys, written with a header in square brackets.
+  - word: header
+    approved_meaning: The bracketed line that starts a TOML table.
+  - word: string
+    approved_meaning: A TOML value written inside quotation marks.
+  - word: integer
+    approved_meaning: A TOML value that is a whole number.
+  - word: boolean
+    approved_meaning: A TOML value that is true or false.
+  - word: default
+    approved_meaning: The value the daemon uses when the config file gives none.
+  - word: defaults
+    approved_meaning: The values the daemon uses when the config file gives none.
+  - word: suffix
+    approved_meaning: The last part of a key name, here -secs.
+  # ---- Time units ----
+  - word: second
+    approved_meaning: The SI unit of time.
+  - word: seconds
+    approved_meaning: The SI unit of time.
+  - word: minute
+    approved_meaning: A period of sixty seconds.
+  - word: minutes
+    approved_meaning: Periods of sixty seconds.
+technical_verbs:
+  - word: lock
+    inflections: [locks, locked, locking]
+  - word: unlock
+    inflections: [unlocks, unlocked, unlocking]
+  - word: spawn
+    inflections: [spawns, spawned, spawning]
+  - word: build
+    inflections: [builds, built, building]
+  - word: install
+    inflections: [installs, installed, installing]
+  - word: run
+    inflections: [runs, ran, running]
+  - word: start
+    inflections: [starts, started, starting]
+  - word: stop
+    inflections: [stops, stopped, stopping]
+  - word: restart
+    inflections: [restarts, restarted, restarting]
+  - word: enable
+    inflections: [enables, enabled, enabling]
+  - word: disable
+    inflections: [disables, disabled, disabling]
+  - word: check
+    inflections: [checks, checked, checking]
+  - word: test
+    inflections: [tests, tested, testing]
+  - word: set
+    inflections: [sets, setting]
+  - word: name
+    inflections: [names, named, naming]
+  - word: read
+    inflections: [reads, reading]
+  - word: write
+    inflections: [writes, wrote, written, writing]
+  - word: delete
+    inflections: [deletes, deleted, deleting]
+  - word: parse
+    inflections: [parses, parsed, parsing]
+  - word: log
+    inflections: [logs, logged, logging]
+  - word: suppress
+    inflections: [suppresses, suppressed, suppressing]
+  - word: release
+    inflections: [releases, released, releasing]
+  - word: resolve
+    inflections: [resolves, resolved, resolving]
+  - word: point
+    inflections: [points, pointed, pointing]
+  - word: wait
+    inflections: [waits, waited, waiting]
+  - word: copy
+    inflections: [copies, copied, copying]
+  - word: edit
+    inflections: [edits, edited, editing]
+preferred_terms: {}

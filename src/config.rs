@@ -1,77 +1,78 @@
-//! `~/.config/saola/session.kdl` — idle timeouts, the locker command, and
+//! `~/.config/saola/session.toml` — idle timeouts, the locker command, and
 //! the before-sleep-lock toggle.
 //!
-//! Same KDL family and resolution order as the panel's `panel.kdl` and the
-//! lockscreen's `lockscreen.kdl` (hand-walked KDL document via the `kdl`
-//! crate, no serde derive — see either sibling's `config.rs` doc comment for
-//! why: precise per-knob warnings on bad values, explicit code over a
-//! derived deserializer). The file is entirely optional, every knob has a
-//! built-in default, and it is read **once at startup** — no live reload
-//! (Architecture / PLAN.md context: a daemon restart via `systemctl --user
-//! restart` is cheap enough that live-reload isn't worth the complexity).
+//! # Why TOML, and why walked by hand (teaching note)
+//!
+//! **2026-09-07**: this module was KDL through 0.1.0. The Saola family moved
+//! its user-facing config files to TOML — `saola-capture` first (2026-08-08),
+//! then `saola-greeter` and `saola-notifications`, with the panel and the
+//! lockscreen migrating alongside this crate — so `session.toml` is what
+//! keeps this daemon's config the same shape as every other component's. See
+//! `Cargo.toml`'s dated dependency essay for the crate pick itself.
+//!
+//! The parse style does **not** change with the format. [`toml::Table`] is
+//! walked explicitly here — `table.get("locker")`, `.as_str()`, … — instead
+//! of deriving `serde::Deserialize` on [`SessionConfig`], for the same two
+//! reasons the KDL version gave: a reader newer to Rust can trace an explicit
+//! walk line by line (CLAUDE.md's teaching-note rule), and a hand-written
+//! extractor can name exactly *which* knob was bad ("lock-before-sleep "yes"
+//! is not a boolean — using default true") where a one-shot "deserialize
+//! failed" cannot. `toml`'s default features do pull in `serde` internally
+//! (that is how `Table`/`Value` get their own `Deserialize` impls), but that
+//! is `toml` parsing into its own generic value tree, not this module
+//! deriving anything.
+//!
+//! The file is entirely optional, every knob has a built-in default, and it
+//! is read **once at startup** — no live reload (Architecture / PLAN.md
+//! context: a daemon restart via `systemctl --user restart` is cheap enough
+//! that live-reload isn't worth the complexity).
 //!
 //! # Schema
 //!
-//! ```kdl
-//! idle {
-//!     lock-after 5            // bare integer = minutes; omit to disable idle-lock
-//!     power-off-after "90s"   // or a quoted duration: "30s", "5m"; omit to disable
-//! }
-//! locker "saola-lockscreen"   // default; any command to spawn
-//! lock-before-sleep #true     // default
+//! ```toml
+//! # ~/.config/saola/session.toml — every key optional; omit the file for defaults.
+//! locker = "saola-lockscreen"   # default; any command to spawn
+//! lock-before-sleep = true      # default
+//!
+//! [idle]
+//! lock-after-secs = 300         # whole seconds; omit to disable the idle lock
+//! power-off-after-secs = 600    # whole seconds; omit to disable output power-off
 //! ```
 //!
-//! Timeouts take two forms: a bare KDL integer (whole minutes — the
-//! original schema, kept so existing configs and the common case stay
-//! terse) or a quoted string with an explicit unit suffix, `"30s"`
-//! (seconds) or `"5m"` (minutes), added so sub-minute timeouts are
-//! expressible — mainly for testing against a nested compositor, where
-//! waiting out a full real minute per run is the difference between a
-//! usable live test and an unusable one.
+//! **Key order matters in TOML, and only in one direction:** the bare
+//! top-level keys must come *before* the `[idle]` table header, because every
+//! key written after a table header belongs to that table. A
+//! `lock-before-sleep` written under `[idle]` is read as `idle.
+//! lock-before-sleep`, which this loader never looks at — it is an unknown
+//! key, silently ignored, and before-sleep locking quietly keeps its default.
+//! The sample above shows the order that works; the README's copy shows the
+//! same one.
 //!
-//! `#true`/`#false`, not bare `true`/`false`: `Cargo.toml` pins plain
-//! `kdl = "6.7.1"` (no `v1`/`v1-fallback` feature, matching both siblings'
-//! pin exactly), and that crate's default parser is **KDL v2**, whose
-//! spec reserves bare `true`/`false`/`null` as ordinary identifiers and
-//! requires the `#`-prefixed keyword form for the boolean/null literals
-//! (verified directly against this crate's own test fixtures under
-//! `kdl-6.7.1/src/document.rs`, e.g. `mouse_mode #false`, not
-//! `mouse_mode false` — a bare `lock-before-sleep false` fails to parse
-//! with "Expected identifier string" rather than reading as a bool). This
-//! is a KDL-the-format detail, not a `saola-session`-specific rule — worth
-//! calling out here because neither sibling's config has had a bool knob
-//! yet to hit it first.
+//! Unlike the lockscreen's `lockscreen { }` wrapper node, there is no outer
+//! `[session]` table: `session.toml` is already this daemon's own file, so
+//! `locker` and `lock-before-sleep` are bare top-level keys. `[idle]` is an
+//! ordinary sub-table, not a namespace envelope — it exists because the two
+//! idle timeouts really are one concern. Kebab-case survives the format
+//! change: TOML's bare-key grammar allows `-` alongside alphanumerics and
+//! `_`, so `lock-before-sleep` needs no quoting.
 //!
-//! Unlike the lockscreen's `lockscreen { }` wrapper node, `idle { }`,
-//! `locker`, and `lock-before-sleep` are all top-level nodes in this
-//! document — there is no outer `session { }` envelope (Architecture's
-//! sketch of this schema has none, and nothing else needs the namespacing a
-//! wrapper node would buy).
+//! # Why `-secs` in the timeout key names
 //!
-//! Every knob is independently optional. An empty file, a file that omits a
-//! node entirely, and a file that sets every knob to its default all parse
-//! to the exact same [`SessionConfig::default`]:
+//! The family's implemented precedent is a bare key with the unit only in the
+//! docs (`saola-capture`'s `delay`, the greeter's `failure-delay`). This
+//! daemon deliberately breaks that precedent, because the old KDL
+//! `lock-after` meant whole **minutes**. Reusing the bare name with a
+//! silently changed unit would turn a copied-over `lock-after = 5` into a
+//! five-*second* lock loop — a config that still parses, still looks right,
+//! and locks the screen every five seconds. The unit in the key name makes
+//! the change impossible to miss: `lock-after-secs = 5` reads as five
+//! seconds because it says so.
 //!
-//!   - `idle.lock-after <timeout>` — idle-lock timeout (bare minutes or a
-//!     suffixed string, per the schema section above). Absent by default,
-//!     which means idle-lock is **disabled**, not "some fallback timeout" —
-//!     Stage 5's idle module skips registering the notification entirely
-//!     when this is `None` (Architecture: "skip entirely when config
-//!     disables both — don't hold a Wayland connection for nothing").
-//!   - `idle.power-off-after <timeout>` — output power-off timeout. Same
-//!     value forms, same absent-means-disabled rule, independent of
-//!     `lock-after`.
-//!   - `locker "command"` — the command Stage 4/5 spawn to lock the
-//!     session. Defaults to `"saola-lockscreen"` (resolved via `$PATH` at
-//!     spawn time, same as any bare command). The daemon does not parse or
-//!     validate this beyond "non-empty string" — Architecture: "the daemon
-//!     must not hardcode more knowledge of the locker than 'a command to
-//!     spawn'".
-//!   - `lock-before-sleep <bool>` — whether Stage 4's before-sleep module
-//!     spawns the locker at all. Defaults to `true`. This is the one knob
-//!     where "bad value" and "explicitly disabled" must never be
-//!     confusable: a malformed value here falls back to `true` (locking
-//!     stays on), never to `false` — see the resilience rules below.
+//! Seconds rather than minutes is the second half of that choice: sub-minute
+//! timeouts are what the nested-niri live-testing procedure (CLAUDE.md) runs
+//! on, and the old KDL schema needed a whole second value form (`"30s"`,
+//! `"5m"` strings) just to express them. One integer unit removes the suffix
+//! parser entirely — there is no `"90s"` form any more, in either direction.
 //!
 //! # Resilience rules (binding — mirrors the siblings' loaders, stricter
 //! consequence)
@@ -84,42 +85,52 @@
 //! ranking:
 //!
 //! - **No file at all** → [`SessionConfig::default`], silently. The
-//!   expected case for anyone who hasn't written a `session.kdl` yet — and
+//!   expected case for anyone who hasn't written a `session.toml` yet — and
 //!   note the default is `lock_before_sleep: true`, so "no config" already
-//!   means "before-sleep locking is on".
-//! - **File present but not valid KDL** ("garbage") → one `tracing::warn!`
+//!   means "before-sleep locking is on". The one exception to the silence is
+//!   a leftover `session.kdl` sitting where the TOML file would go: see
+//!   [`warn_if_stale_kdl_sibling`].
+//! - **File present but not valid TOML** ("garbage") → one `tracing::warn!`
 //!   naming the file and the parse error, then the whole config falls back
 //!   to [`SessionConfig::default`] — not a partial merge (same reasoning as
-//!   both siblings' loaders: a document that doesn't even parse gives this
+//!   every sibling loader: a document that doesn't even parse gives this
 //!   module nothing safe to partially trust). Falling back to the default
 //!   still means `lock_before_sleep: true` — a garbage file can silence
 //!   idle-lock (which defaults to disabled anyway) but can never silence
 //!   before-sleep locking.
 //! - **File parses, but a single knob's value is nonsense** (a
-//!   `lock-before-sleep` that isn't a bool, a `lock-after` that isn't a
+//!   `lock-before-sleep` that isn't a bool, a `lock-after-secs` that isn't a
 //!   positive integer, an empty `locker` string) → warn on that one knob,
 //!   keep the rest of the document, and default just that knob. Critically,
 //!   `lock-before-sleep`'s per-knob default is `true`, exactly like the
 //!   whole-document default — there is no code path, bad-document or
 //!   bad-knob, that resolves this field to `false` other than an explicit,
-//!   well-formed `lock-before-sleep #false` in the file.
+//!   well-formed `lock-before-sleep = false` in the file.
+//! - **Unknown keys** → silently ignored, at the top level and inside
+//!   `[idle]` alike. This loader only ever asks for the keys it knows; it
+//!   never enumerates the table, so a stray key costs nothing and a future
+//!   knob can be added without an older daemon complaining about it.
 //!
 //! Every one of these paths is unit-tested below.
 
 use std::ffi::OsString;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use kdl::KdlDocument;
+use toml::Table;
 
 /// The fixed file name every resolved config directory is joined with.
-const FILE_NAME: &str = "session.kdl";
+const FILE_NAME: &str = "session.toml";
+
+/// The pre-0.1.0 file name, kept only so [`warn_if_stale_kdl_sibling`] can
+/// recognize a config nobody has ported yet. Nothing ever parses it.
+const STALE_FILE_NAME: &str = "session.kdl";
 
 /// `locker`'s default value — see the module doc comment's schema section.
 const DEFAULT_LOCKER: &str = "saola-lockscreen";
 
-/// The whole of `session.kdl`, resolved to typed values — loaded once at
+/// The whole of `session.toml`, resolved to typed values — loaded once at
 /// boot (`SessionConfig::load`, called from `main.rs`) and never re-read
 /// (module doc comment: no live reload).
 ///
@@ -130,15 +141,15 @@ const DEFAULT_LOCKER: &str = "saola-lockscreen";
 /// warnings`'s dead-code lint is concerned.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SessionConfig {
-    /// The `idle { }` node — see [`IdleConfig`].
+    /// The `[idle]` table — see [`IdleConfig`].
     pub idle: IdleConfig,
-    /// `locker "command"` — see the module doc comment's schema section.
+    /// `locker = "command"` — see the module doc comment's schema section.
     /// Never empty: an empty or absent value resolves to
     /// [`DEFAULT_LOCKER`].
     pub locker: String,
-    /// `lock-before-sleep <bool>` — see the module doc comment's schema and
-    /// resilience-rules sections. Defaults `true` on every fallback path,
-    /// not just the happy path.
+    /// `lock-before-sleep = <bool>` — see the module doc comment's schema
+    /// and resilience-rules sections. Defaults `true` on every fallback
+    /// path, not just the happy path.
     pub lock_before_sleep: bool,
 }
 
@@ -152,30 +163,30 @@ impl Default for SessionConfig {
     }
 }
 
-/// The `idle { }` node's two independently-optional timeouts, resolved to
-/// [`Duration`]s (the KDL surface accepts bare minutes or a suffixed
-/// string — see the module doc comment's schema section; by the time a
-/// value lands here the unit question is already settled). `None` means
-/// "this action is disabled", not "use some other timeout" — there is no
-/// built-in non-`None` default for either field (module doc comment: idle
-/// policy is opt-in, unlike before-sleep locking, which is opt-out).
+/// The `[idle]` table's two independently-optional timeouts, resolved to
+/// [`Duration`]s. The on-disk keys carry a `-secs` suffix (module doc
+/// comment: the unit is in the name on purpose); the Rust fields do not,
+/// because a [`Duration`] already carries its own unit. `None` means "this
+/// action is disabled", not "use some other timeout" — there is no built-in
+/// non-`None` default for either field (module doc comment: idle policy is
+/// opt-in, unlike before-sleep locking, which is opt-out).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct IdleConfig {
-    /// `idle.lock-after <timeout>` — spawn the locker after this long with
-    /// no `ext-idle-notify-v1` activity. Stage 5 consumes this.
+    /// `idle.lock-after-secs` — spawn the locker after this long with no
+    /// `ext-idle-notify-v1` activity. Stage 5 consumes this.
     pub lock_after: Option<Duration>,
-    /// `idle.power-off-after <timeout>` — run `niri msg action
+    /// `idle.power-off-after-secs` — run `niri msg action
     /// power-off-monitors` after this long idle. Stage 5 consumes this,
     /// independent of `lock_after`.
     pub power_off_after: Option<Duration>,
 }
 
-/// A KDL document that failed to parse at all — the "garbage file" case.
+/// A document that failed to parse as TOML at all — the "garbage file" case.
 /// Deliberately the only error this module has: once the document parses,
 /// every remaining problem (a bad knob value) is handled knob-by-knob with
 /// a warning, never by returning `Err` — see the module doc comment.
 #[derive(Debug)]
-pub struct ConfigError(kdl::KdlError);
+pub struct ConfigError(toml::de::Error);
 
 impl fmt::Display for ConfigError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -197,15 +208,20 @@ impl SessionConfig {
         Self::load_from(&path)
     }
 
-    fn load_from(path: &std::path::Path) -> Self {
+    fn load_from(path: &Path) -> Self {
         let contents = match std::fs::read_to_string(path) {
             Ok(contents) => contents,
             // Covers both "the file doesn't exist" (the common case) and
             // any other I/O error (permissions, …) — both degrade to
-            // defaults silently, same as the siblings' loaders: an I/O
-            // error here is not "malformed KDL", so it does not get the
-            // parse failure's warning.
-            Err(_) => return Self::default(),
+            // defaults, same as every sibling loader: an I/O error here is
+            // not "malformed TOML", so it does not get the parse failure's
+            // warning. The one thing worth a word is a leftover
+            // `session.kdl`, which is why the hint lives on exactly this
+            // branch and nowhere else.
+            Err(_) => {
+                warn_if_stale_kdl_sibling(path);
+                return Self::default();
+            }
         };
         match Self::parse(&contents) {
             Ok(config) => config,
@@ -213,56 +229,40 @@ impl SessionConfig {
                 tracing::warn!(
                     path = %path.display(),
                     error = %err,
-                    "session.kdl is not valid KDL — using defaults"
+                    "session.toml is not valid TOML — using defaults"
                 );
                 Self::default()
             }
         }
     }
 
-    /// Parse a `session.kdl` document's contents into a [`SessionConfig`].
+    /// Parse a `session.toml` document's contents into a [`SessionConfig`].
     ///
-    /// Returns `Err` **only** if `contents` isn't valid KDL at all — every
-    /// other problem (an absent node, a bad knob value) resolves to that
-    /// one knob's default and is reported with `tracing::warn!` rather than
-    /// failing the whole parse. This is the function the unit tests below
-    /// exercise directly, without touching the filesystem.
+    /// Returns `Err` **only** if `contents` isn't valid TOML at all — every
+    /// other problem (an absent key, a bad knob value, an unknown key)
+    /// resolves to that one knob's default and is reported with
+    /// `tracing::warn!` rather than failing the whole parse. This is the
+    /// function the unit tests below exercise directly, without touching the
+    /// filesystem.
     pub fn parse(contents: &str) -> Result<Self, ConfigError> {
-        let document = KdlDocument::parse(contents).map_err(ConfigError)?;
+        // `contents.parse::<Table>()` is the whole "read the document"
+        // step: it produces a generic key → value tree, and everything
+        // below is an explicit walk over it. Nothing is deserialized into
+        // `SessionConfig` directly — see the module doc comment.
+        let body: Table = contents.parse().map_err(ConfigError)?;
 
-        let idle_body = document.get("idle").and_then(|node| node.children());
-        let lock_after = read_arg_timeout(idle_body, "lock-after");
-        let power_off_after = read_arg_timeout(idle_body, "power-off-after");
+        let idle_body = read_idle_table(&body);
+        // `and_then` rather than `map`: the sub-table may be absent (no
+        // `[idle]` written) *and* each key inside it may be absent, and
+        // both mean the same thing here — that action stays disabled.
+        let lock_after = idle_body.and_then(|idle| read_secs(idle, "lock-after-secs"));
+        let power_off_after = idle_body.and_then(|idle| read_secs(idle, "power-off-after-secs"));
 
-        let locker = read_arg_str(Some(&document), "locker")
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                // Distinguish "absent" from "present but wrong type or
-                // empty" only in the warning text — both resolve to the
-                // same default, per the module doc comment's per-knob
-                // resilience rule.
-                if document.get_arg("locker").is_some() {
-                    tracing::warn!(
-                        "session.kdl: locker is not a non-empty string — using default \"{DEFAULT_LOCKER}\""
-                    );
-                }
-                DEFAULT_LOCKER.to_string()
-            });
-
-        let lock_before_sleep = match document.get_arg("lock-before-sleep") {
-            None => true,
-            Some(value) => match value.as_bool() {
-                Some(b) => b,
-                None => {
-                    tracing::warn!(
-                        "session.kdl: lock-before-sleep \"{value}\" is not a bool — using default true"
-                    );
-                    true
-                }
-            },
-        };
+        let locker = read_locker(&body).unwrap_or_else(|| DEFAULT_LOCKER.to_string());
+        // The severity-critical fallback: `unwrap_or(true)`, never
+        // `unwrap_or(default.lock_before_sleep)` read from somewhere that
+        // could change. Absent, wrong type, and unreadable all land here.
+        let lock_before_sleep = read_bool(&body, "lock-before-sleep").unwrap_or(true);
 
         Ok(SessionConfig {
             idle: IdleConfig {
@@ -275,8 +275,37 @@ impl SessionConfig {
     }
 }
 
-/// Where `session.kdl` lives: the resolved config **directory** joined with
-/// the fixed file name. Same three-rung chain as both siblings
+/// The migration hint: a `session.toml` that doesn't exist is unremarkable on
+/// its own (nobody has to write one), but a **sibling `session.kdl`** sitting
+/// exactly where the TOML file would go is almost certainly a pre-2026-09-07
+/// config that nobody has ported. Worth one `tracing::warn!` naming both
+/// paths so the fix is obvious, without turning it into an error — defaults
+/// still apply exactly as they would for any other missing file.
+///
+/// Returns whether the stale file was found, which is what makes the
+/// behaviour unit-testable: a bare log line is not something a test can
+/// assert on without capturing the subscriber's output.
+fn warn_if_stale_kdl_sibling(toml_path: &Path) -> bool {
+    // `with_file_name`, not `with_extension`: the two names are fixed
+    // constants, so swapping the whole file name says what is meant even if
+    // the TOML path ever grows a dotted component.
+    let kdl_path = toml_path.with_file_name(STALE_FILE_NAME);
+    if !kdl_path.is_file() {
+        return false;
+    }
+    tracing::warn!(
+        stale = %kdl_path.display(),
+        expected = %toml_path.display(),
+        "found a session.kdl but no session.toml — the config format moved to TOML and \
+         session.kdl is no longer read; copy its knobs into session.toml (the idle timeouts \
+         are now whole seconds, named lock-after-secs / power-off-after-secs), or delete it \
+         to stop seeing this hint — using defaults for now"
+    );
+    true
+}
+
+/// Where `session.toml` lives: the resolved config **directory** joined with
+/// the fixed file name. Same three-rung chain as every sibling
 /// (`SAOLA_CONFIG_DIR` / `XDG_CONFIG_HOME/saola` / `~/.config/saola`); this
 /// daemon takes no command-line config-dir override, matching the
 /// lockscreen (a `systemd --user` unit has no interactive terminal handing
@@ -297,7 +326,7 @@ fn resolve_path() -> Option<PathBuf> {
 /// environment variable is a plain argument instead of read from the
 /// process environment directly, so precedence can be unit-tested without
 /// mutating (and thereby racing every other test in this binary against)
-/// the real environment — identical helper to both siblings'.
+/// the real environment — identical helper to every sibling's.
 ///
 /// An env var set to the **empty string** is treated as unset and falls
 /// through to the next rung, matching the XDG spec's own rule for
@@ -323,67 +352,88 @@ fn config_dir_from(
         .map(|home| PathBuf::from(home).join(".config/saola"))
 }
 
-/// `body.get_arg(name)` as a string, if the node exists and its first
-/// positional argument is a KDL string. A node present but holding a
-/// non-string value falls through to `None` — same "absent knob" fallback
-/// path as the siblings' identical helper, no separate error needed for
-/// "wrong value type" versus "missing entirely".
-fn read_arg_str<'a>(body: Option<&'a KdlDocument>, name: &str) -> Option<&'a str> {
-    body?.get_arg(name)?.as_string()
-}
-
-/// `idle.lock-after`/`idle.power-off-after` as a [`Duration`]. Two accepted
-/// forms (module doc comment's schema section): a KDL integer strictly
-/// greater than zero, read as whole minutes; or a KDL string with an
-/// explicit unit suffix (`"30s"`, `"5m"`), which is what makes sub-minute
-/// timeouts expressible. Everything else — a float, zero, a negative
-/// number, a suffix-less or unknown-suffix string — warns and falls back to
-/// `None` (disabled), the same per-knob resilience rule every other bad
-/// value in this file gets. `None` here already *is* the safe default (idle
-/// actions are opt-in, per the module doc comment), so this fallback never
-/// touches the severity-1 concern the way `lock-before-sleep`'s does.
-fn read_arg_timeout(body: Option<&KdlDocument>, name: &str) -> Option<Duration> {
-    let value = body?.get_arg(name)?;
-
-    // Bare integer: whole minutes, the original schema, unchanged.
-    if let Some(n) = value.as_integer() {
-        if let Some(n) = u32::try_from(n).ok().filter(|n| *n > 0) {
-            return Some(Duration::from_secs(u64::from(n) * 60));
-        }
-    } else if let Some(s) = value.as_string() {
-        // Quoted string: explicit unit required — accepting a bare "90"
-        // would leave its unit ambiguous against the integer form's
-        // minutes, so it is deliberately rejected rather than guessed at.
-        if let Some(duration) = parse_suffixed_duration(s) {
-            return Some(duration);
+/// The `[idle]` sub-table, if it is present *and* is actually a table.
+///
+/// Absent is the ordinary case (idle policy is opt-in) and stays silent. A
+/// key called `idle` holding something that isn't a table (`idle = 5`, the
+/// shape a KDL-era muscle memory might produce) is a mistake worth exactly
+/// one warning, after which it is treated as absent — both timeouts stay
+/// disabled, and no per-key warning fires for keys that could not have been
+/// read anyway.
+fn read_idle_table(body: &Table) -> Option<&Table> {
+    let value = body.get("idle")?;
+    match value.as_table() {
+        Some(table) => Some(table),
+        None => {
+            tracing::warn!("session.toml: idle {value} is not a table — ignored");
+            None
         }
     }
-
-    tracing::warn!(
-        "session.kdl: idle.{name} \"{value}\" is not a positive whole number of minutes \
-         or a duration string like \"30s\"/\"5m\" — ignored"
-    );
-    None
 }
 
-/// `"30s"` / `"5m"` → a positive [`Duration`]; anything else → `None`.
-/// The digits must parse as a positive integer — `"0s"`, `"1.5m"`, `"s"`,
-/// and `"5h"` all fall through to [`read_arg_timeout`]'s warning.
-/// `checked_mul` on the seconds count keeps an absurd value (`"99999999m"`
-/// levels of absurd would still fit; this is `u64::MAX`-adjacent input)
-/// saturating into `None` rather than panicking — the crate no-panic rule.
-fn parse_suffixed_duration(s: &str) -> Option<Duration> {
-    let s = s.trim();
-    let (digits, unit_seconds) = if let Some(digits) = s.strip_suffix('s') {
-        (digits, 1u64)
-    } else {
-        // No `s` suffix: `m` is the only other unit, and `?` bails on
-        // anything else (clippy's `question_mark` prefers this shape over
-        // a third `else` arm returning `None` explicitly).
-        (s.strip_suffix('m')?, 60u64)
-    };
-    let count: u64 = digits.parse().ok().filter(|n| *n > 0)?;
-    count.checked_mul(unit_seconds).map(Duration::from_secs)
+/// `idle.lock-after-secs` / `idle.power-off-after-secs` as a [`Duration`].
+///
+/// The only accepted form is a TOML integer strictly greater than zero,
+/// counted in whole seconds (module doc comment: the unit is in the key
+/// name). A float, a string, zero, or a negative number all warn and fall
+/// back to `None` (disabled) — the same per-knob resilience rule every other
+/// bad value in this file gets. `None` here already *is* the safe default
+/// (idle actions are opt-in), so this fallback never touches the severity-1
+/// concern the way `lock-before-sleep`'s does.
+///
+/// TOML integers are `i64`, so `u64::try_from` is what rejects a negative
+/// value without a cast that could wrap — the crate's no-panic rule rules
+/// out `as` conversions that silently produce nonsense here.
+fn read_secs(table: &Table, name: &str) -> Option<Duration> {
+    let value = table.get(name)?;
+    match value
+        .as_integer()
+        .and_then(|secs| u64::try_from(secs).ok())
+        .filter(|secs| *secs > 0)
+    {
+        Some(secs) => Some(Duration::from_secs(secs)),
+        None => {
+            tracing::warn!(
+                "session.toml: idle.{name} {value} is not a positive whole number of \
+                 seconds — ignored"
+            );
+            None
+        }
+    }
+}
+
+/// `locker = "command"`. Present but not a string, or a string that is empty
+/// after trimming, both warn and fall back to `None` (the caller's default):
+/// an empty command is as unusable as no command at all, and spawning it
+/// literally would fail at every lock trigger instead of once here.
+fn read_locker(body: &Table) -> Option<String> {
+    let value = body.get("locker")?;
+    let trimmed = value.as_str().map(str::trim).filter(|s| !s.is_empty());
+    match trimmed {
+        Some(command) => Some(command.to_string()),
+        None => {
+            tracing::warn!(
+                "session.toml: locker {value} is not a non-empty string — using default \
+                 \"{DEFAULT_LOCKER}\""
+            );
+            None
+        }
+    }
+}
+
+/// `lock-before-sleep = <bool>` as a `bool`. A key present but holding a
+/// non-boolean value warns and falls back to `None`, which the caller turns
+/// into `true` — the severity-critical rule stated in the module doc
+/// comment: there is no path from a malformed value to "locking off".
+fn read_bool(body: &Table, name: &str) -> Option<bool> {
+    let value = body.get(name)?;
+    match value.as_bool() {
+        Some(b) => Some(b),
+        None => {
+            tracing::warn!("session.toml: {name} {value} is not a boolean — using default true");
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -395,30 +445,31 @@ mod tests {
     /// the built-in default.
     #[test]
     fn default_config_parses() {
-        let config = SessionConfig::parse("").expect("an empty document is valid KDL");
+        let config = SessionConfig::parse("").expect("an empty document is valid TOML");
         assert_eq!(config, SessionConfig::default());
     }
 
     /// Every knob the schema defines, set to non-default values, all land
-    /// correctly.
+    /// correctly — in the key order the schema requires (bare top-level
+    /// keys first, then the `[idle]` table).
     #[test]
     fn full_config_parses() {
-        let kdl = r##"
-            idle {
-                lock-after 5
-                power-off-after 10
-            }
-            locker "swaylock"
-            lock-before-sleep #false
-        "##;
-        let config = SessionConfig::parse(kdl).expect("well-formed KDL");
+        let toml = r#"
+            locker = "swaylock"
+            lock-before-sleep = false
+
+            [idle]
+            lock-after-secs = 300
+            power-off-after-secs = 600
+        "#;
+        let config = SessionConfig::parse(toml).expect("well-formed TOML");
 
         assert_eq!(
             config,
             SessionConfig {
                 idle: IdleConfig {
-                    lock_after: Some(Duration::from_secs(5 * 60)),
-                    power_off_after: Some(Duration::from_secs(10 * 60)),
+                    lock_after: Some(Duration::from_secs(300)),
+                    power_off_after: Some(Duration::from_secs(600)),
                 },
                 locker: "swaylock".to_string(),
                 lock_before_sleep: false,
@@ -426,51 +477,14 @@ mod tests {
         );
     }
 
-    /// The quoted-string timeout form: an explicit `s`/`m` suffix, the
-    /// schema's way of expressing sub-minute values (the bare-integer form
-    /// is whole minutes only).
+    /// Sub-minute timeouts are the point of the seconds unit — a value the
+    /// old KDL schema needed a `"30s"` string form to express is now just an
+    /// integer, and it is taken literally with no rounding to whole minutes.
     #[test]
-    fn suffixed_duration_strings_parse() {
-        let kdl = r##"
-            idle {
-                lock-after "30s"
-                power-off-after "5m"
-            }
-        "##;
-        let config = SessionConfig::parse(kdl).expect("well-formed KDL");
-
-        assert_eq!(config.idle.lock_after, Some(Duration::from_secs(30)));
-        assert_eq!(config.idle.power_off_after, Some(Duration::from_secs(300)));
-    }
-
-    /// Seconds counts above a minute are fine too — `"90s"` means ninety
-    /// seconds, no normalization or "should have written 1m30s" pedantry.
-    #[test]
-    fn oversized_seconds_are_taken_literally() {
-        let config = SessionConfig::parse(r#"idle { lock-after "90s" }"#).expect("well-formed KDL");
-        assert_eq!(config.idle.lock_after, Some(Duration::from_secs(90)));
-    }
-
-    /// Bad duration strings — zero, a missing or unknown suffix, a bare
-    /// number in quotes (unit would be ambiguous), fractions — all fall
-    /// back to disabled, same rule as every other bad knob value.
-    #[test]
-    fn bad_duration_strings_are_ignored() {
-        for bad in [
-            r#""0s""#,
-            r#""90""#,
-            r#""5h""#,
-            r#""s""#,
-            r#""1.5m""#,
-            r#""-30s""#,
-        ] {
-            let kdl = format!("idle {{ lock-after {bad} }}");
-            let config = SessionConfig::parse(&kdl).expect("well-formed KDL");
-            assert_eq!(
-                config.idle.lock_after, None,
-                "{bad} should have been rejected"
-            );
-        }
+    fn sub_minute_timeouts_are_taken_literally() {
+        let config =
+            SessionConfig::parse("[idle]\nlock-after-secs = 20").expect("well-formed TOML");
+        assert_eq!(config.idle.lock_after, Some(Duration::from_secs(20)));
     }
 
     /// A config that only sets one knob leaves the rest at their
@@ -478,171 +492,183 @@ mod tests {
     /// disables all defaults".
     #[test]
     fn partial_config_parses() {
-        let kdl = r##"
-            idle {
-                lock-after 15
-            }
-        "##;
-        let config = SessionConfig::parse(kdl).expect("well-formed KDL");
+        let toml = r#"
+            [idle]
+            lock-after-secs = 900
+        "#;
+        let config = SessionConfig::parse(toml).expect("well-formed TOML");
 
-        assert_eq!(config.idle.lock_after, Some(Duration::from_secs(15 * 60)));
+        assert_eq!(config.idle.lock_after, Some(Duration::from_secs(900)));
         assert_eq!(config.idle.power_off_after, None);
         assert_eq!(config.locker, DEFAULT_LOCKER);
         assert!(config.lock_before_sleep);
     }
 
-    /// `lock-after` and `power-off-after` are independently optional — only
-    /// setting one never implies or disables the other.
+    /// `lock-after-secs` and `power-off-after-secs` are independently
+    /// optional — only setting one never implies or disables the other, and
+    /// an empty `[idle]` table is the same as no table at all.
     #[test]
     fn idle_actions_are_independent() {
-        let only_power_off = SessionConfig::parse("idle { power-off-after 20 }")
-            .expect("well-formed KDL")
+        let only_power_off = SessionConfig::parse("[idle]\npower-off-after-secs = 1200")
+            .expect("well-formed TOML")
             .idle;
         assert_eq!(only_power_off.lock_after, None);
         assert_eq!(
             only_power_off.power_off_after,
-            Some(Duration::from_secs(20 * 60))
+            Some(Duration::from_secs(1200))
         );
 
-        let neither = SessionConfig::parse("idle { }")
-            .expect("well-formed KDL")
+        let neither = SessionConfig::parse("[idle]")
+            .expect("well-formed TOML")
             .idle;
         assert_eq!(neither, IdleConfig::default());
     }
 
-    /// A non-numeric `lock-after` warns and defaults just that knob — the
-    /// rest of the document (here, `power-off-after`) still loads. This is
-    /// the single-bad-knob resilience rule, distinct from a
+    /// A non-integer `lock-after-secs` warns and defaults just that knob —
+    /// the rest of the document (here, `power-off-after-secs`) still loads.
+    /// This is the single-bad-knob resilience rule, distinct from a
     /// whole-document parse failure below.
     #[test]
-    fn non_numeric_lock_after_is_ignored() {
-        let kdl = r##"
-            idle {
-                lock-after "soon"
-                power-off-after 10
-            }
-        "##;
-        let config = SessionConfig::parse(kdl).expect("well-formed KDL");
+    fn non_integer_lock_after_is_ignored() {
+        let toml = r#"
+            [idle]
+            lock-after-secs = "soon"
+            power-off-after-secs = 600
+        "#;
+        let config = SessionConfig::parse(toml).expect("well-formed TOML");
 
         assert_eq!(config.idle.lock_after, None);
-        assert_eq!(
-            config.idle.power_off_after,
-            Some(Duration::from_secs(10 * 60))
-        );
+        assert_eq!(config.idle.power_off_after, Some(Duration::from_secs(600)));
     }
 
-    /// Zero and negative minute counts are nonsense for a timeout — both
-    /// fall back to disabled rather than being taken literally.
-    #[test]
-    fn non_positive_lock_after_is_ignored() {
-        let zero = SessionConfig::parse("idle { lock-after 0 }").expect("well-formed KDL");
-        assert_eq!(zero.idle.lock_after, None);
-
-        let negative = SessionConfig::parse("idle { lock-after -5 }").expect("well-formed KDL");
-        assert_eq!(negative.idle.lock_after, None);
-    }
-
-    /// A `lock-after` given as a float (not a KDL integer) is also
-    /// rejected — the bare-number form is whole minutes only; sub-minute
-    /// wants the quoted `"30s"` form, not `0.5`.
+    /// A timeout given as a TOML float is rejected too: the schema is whole
+    /// seconds, and a `0.5` that silently truncated to zero would disable
+    /// the action without saying so.
     #[test]
     fn float_lock_after_is_ignored() {
-        let config = SessionConfig::parse("idle { lock-after 5.5 }").expect("well-formed KDL");
+        let config =
+            SessionConfig::parse("[idle]\nlock-after-secs = 5.5").expect("well-formed TOML");
         assert_eq!(config.idle.lock_after, None);
+    }
+
+    /// Zero and negative second counts are nonsense for a timeout — both
+    /// fall back to disabled rather than being taken literally (a zero-second
+    /// idle timeout would fire continuously).
+    #[test]
+    fn non_positive_secs_are_ignored() {
+        let zero = SessionConfig::parse("[idle]\nlock-after-secs = 0").expect("well-formed TOML");
+        assert_eq!(zero.idle.lock_after, None);
+
+        let negative =
+            SessionConfig::parse("[idle]\npower-off-after-secs = -5").expect("well-formed TOML");
+        assert_eq!(negative.idle.power_off_after, None);
+    }
+
+    /// A key called `idle` that isn't a table at all (`idle = 5`) warns once
+    /// and is treated as absent — both timeouts stay disabled and the rest of
+    /// the document still loads.
+    #[test]
+    fn idle_that_is_not_a_table_is_ignored() {
+        let toml = r#"
+            idle = 5
+            locker = "swaylock"
+        "#;
+        let config = SessionConfig::parse(toml).expect("well-formed TOML");
+
+        assert_eq!(config.idle, IdleConfig::default());
+        assert_eq!(config.locker, "swaylock");
     }
 
     /// The severity-critical case: a `lock-before-sleep` value that isn't a
     /// bool must fall back to `true` (locking stays on), never `false` and
-    /// never propagate as an error.
+    /// never propagate as an error. `"yes"` is the likely real typo — TOML
+    /// booleans are bare `true`/`false` only.
     #[test]
     fn non_bool_lock_before_sleep_defaults_true() {
-        let config = SessionConfig::parse(r#"lock-before-sleep "nope""#).expect("well-formed KDL");
-        assert!(config.lock_before_sleep);
+        for bad in [r#"lock-before-sleep = "yes""#, "lock-before-sleep = 0"] {
+            let config = SessionConfig::parse(bad).expect("well-formed TOML");
+            assert!(
+                config.lock_before_sleep,
+                "{bad} must not disable before-sleep locking"
+            );
+        }
     }
 
-    /// An explicit, well-formed `#false` is the *only* way this field
-    /// resolves to `false` — proven alongside the above so the two cases
-    /// are never confused. (KDL v2 keyword form — see the module doc
-    /// comment's schema section for why bare `false` doesn't parse as a
-    /// bool at all.)
+    /// An explicit, well-formed `false` is the *only* way this field
+    /// resolves to `false` — proven alongside the above so the two cases are
+    /// never confused.
     #[test]
     fn explicit_false_lock_before_sleep_is_honored() {
-        let config = SessionConfig::parse("lock-before-sleep #false").expect("well-formed KDL");
+        let config = SessionConfig::parse("lock-before-sleep = false").expect("well-formed TOML");
         assert!(!config.lock_before_sleep);
     }
 
-    /// An empty `locker ""` is as unusable as no command at all — falls
-    /// back to the default rather than being spawned literally.
+    /// An empty (or all-whitespace) `locker` is as unusable as no command at
+    /// all — falls back to the default rather than being spawned literally.
     #[test]
     fn empty_locker_falls_back_to_default() {
-        let config = SessionConfig::parse(r#"locker "" "#).expect("well-formed KDL");
-        assert_eq!(config.locker, DEFAULT_LOCKER);
+        for empty in [r#"locker = """#, r#"locker = "   ""#] {
+            let config = SessionConfig::parse(empty).expect("well-formed TOML");
+            assert_eq!(config.locker, DEFAULT_LOCKER);
+        }
     }
 
     /// A `locker` given as a non-string value also falls back cleanly.
     #[test]
     fn non_string_locker_falls_back_to_default() {
-        let config = SessionConfig::parse("locker 42").expect("well-formed KDL");
+        let config = SessionConfig::parse("locker = 42").expect("well-formed TOML");
         assert_eq!(config.locker, DEFAULT_LOCKER);
     }
 
-    /// Syntactically invalid KDL is the one case `parse` itself rejects —
-    /// `load_from` (not exercised here, since it touches the filesystem)
-    /// is what turns this `Err` into a full-default fallback plus a
-    /// warning.
+    /// Unknown keys are never enumerated, so they cost nothing: one at the
+    /// top level and one inside `[idle]`, and everything the loader does know
+    /// about still lands.
     #[test]
-    fn garbage_is_rejected_by_parse() {
-        let result = SessionConfig::parse("idle { this is not } valid kdl {{{");
-        assert!(result.is_err());
+    fn unknown_keys_are_ignored() {
+        let toml = r#"
+            locker = "swaylock"
+            enable-teleportation = true
+
+            [idle]
+            lock-after-secs = 300
+            dim-after-secs = 120
+        "#;
+        let config = SessionConfig::parse(toml).expect("well-formed TOML");
+
+        assert_eq!(
+            config,
+            SessionConfig {
+                idle: IdleConfig {
+                    lock_after: Some(Duration::from_secs(300)),
+                    power_off_after: None,
+                },
+                locker: "swaylock".to_string(),
+                lock_before_sleep: true,
+            }
+        );
     }
 
-    /// The single most likely real-world typo this schema invites: writing
-    /// bare `false` (valid in plenty of other config languages, and even
-    /// valid *KDL v1*) instead of the KDL v2 keyword `#false`. This is not
-    /// a "wrong type for this knob" case — it makes the *entire document*
-    /// fail to parse (see the module doc comment's schema section), so the
-    /// whole file falls back to [`SessionConfig::default`], and critically
-    /// `lock_before_sleep` lands on its safe default `true`, not on the
-    /// `false` the author almost certainly intended but mistyped. This is
-    /// exactly the "nonsense-values path ... must not mean 'no locking'"
-    /// case Stage 3's instructions call out.
+    /// Syntactically invalid TOML is the one case `parse` itself rejects —
+    /// `load_from` is what turns this `Err` into a full-default fallback plus
+    /// a warning.
     #[test]
-    fn bareword_bool_typo_fails_whole_document_and_defaults_to_locking_on() {
-        let result = SessionConfig::parse("lock-before-sleep false");
-        assert!(
-            result.is_err(),
-            "bare `false` is a KDL v2 syntax error, not a valid-but-wrong-type bool"
-        );
-
-        let dir = std::env::temp_dir();
-        let path = dir.join(format!(
-            "saola-session-test-bareword-bool-{}.kdl",
-            std::process::id()
-        ));
-        std::fs::write(&path, "lock-before-sleep false").expect("temp dir is writable");
-
-        let config = SessionConfig::load_from(&path);
-
-        std::fs::remove_file(&path).ok();
-        assert!(
-            config.lock_before_sleep,
-            "a config typo must never silently disable before-sleep locking"
-        );
+    fn garbage_is_rejected_by_parse() {
+        let result = SessionConfig::parse("this is not = valid [[[ toml");
+        assert!(result.is_err());
     }
 
     /// `load_from`'s fallback path, exercised directly against a temp file
     /// so the "malformed file → full defaults, including
-    /// `lock_before_sleep: true`" resilience rule is proven end to end,
-    /// not just at the `parse` layer — this is the nonsense-values-path
-    /// test Stage 3's own instructions call out explicitly.
+    /// `lock_before_sleep: true`" resilience rule is proven end to end, not
+    /// just at the `parse` layer.
     #[test]
     fn garbage_file_falls_back_to_defaults() {
         let dir = std::env::temp_dir();
         let path = dir.join(format!(
-            "saola-session-test-garbage-{}.kdl",
+            "saola-session-test-garbage-{}.toml",
             std::process::id()
         ));
-        std::fs::write(&path, "idle { this is not } valid kdl {{{").expect("temp dir is writable");
+        std::fs::write(&path, "this is not = valid [[[ toml").expect("temp dir is writable");
 
         let config = SessionConfig::load_from(&path);
 
@@ -654,17 +680,55 @@ mod tests {
         );
     }
 
-    /// The missing-file default path (Stage 3's own instruction to cover
-    /// this explicitly): a path that doesn't exist at all falls back to
-    /// defaults, not an error and not a panic.
+    /// The missing-file default path: a path that doesn't exist at all falls
+    /// back to defaults, not an error and not a panic.
     #[test]
     fn missing_file_falls_back_to_defaults() {
-        let path = std::env::temp_dir().join("saola-session-test-definitely-missing.kdl");
+        let path = std::env::temp_dir().join("saola-session-test-definitely-missing.toml");
         std::fs::remove_file(&path).ok();
 
         let config = SessionConfig::load_from(&path);
 
         assert_eq!(config, SessionConfig::default());
+    }
+
+    /// A leftover `session.kdl` next to a missing `session.toml` is detected
+    /// and hinted at — and defaults still apply exactly as they would for any
+    /// other missing file. The KDL file is never parsed.
+    #[test]
+    fn a_stale_kdl_sibling_is_reported() {
+        let dir = std::env::temp_dir().join(format!(
+            "saola-session-test-stale-kdl-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir is writable");
+        let toml_path = dir.join(FILE_NAME);
+        let kdl_path = dir.join(STALE_FILE_NAME);
+        std::fs::write(&kdl_path, "idle { lock-after 5 }").expect("temp dir is writable");
+
+        let found = warn_if_stale_kdl_sibling(&toml_path);
+        let config = SessionConfig::load_from(&toml_path);
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(found, "the sibling session.kdl must be detected");
+        assert_eq!(config, SessionConfig::default());
+    }
+
+    /// No sibling, no hint — the ordinary "nobody wrote a config" case must
+    /// stay silent.
+    #[test]
+    fn no_stale_kdl_sibling_is_not_reported() {
+        let dir = std::env::temp_dir().join(format!(
+            "saola-session-test-no-stale-kdl-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp dir is writable");
+        let toml_path = dir.join(FILE_NAME);
+
+        let found = warn_if_stale_kdl_sibling(&toml_path);
+
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(!found);
     }
 
     /// `$SAOLA_CONFIG_DIR` wins over both `$XDG_CONFIG_HOME` and `$HOME`.

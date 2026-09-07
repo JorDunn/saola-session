@@ -48,6 +48,12 @@ shared state):
 - Config file `~/.config/saola/session.kdl` — optional, built-in defaults,
   read once at startup, same KDL family and resolution order as the panel's
   `panel.kdl` and the lockscreen's `lockscreen.kdl`.
+  - **Amendment, 2026-09-07 (after 0.1.0):** the config moved to
+    `~/.config/saola/session.toml`, following the rest of the Saola family off
+    KDL. The resolution order is unchanged; the idle timeouts are now whole
+    seconds with a `-secs` suffix in the key names. The stages below describe
+    the KDL schema as it was built — `src/config.rs` is canonical for the
+    current schema, and `README.md` documents the migration.
 - The locker command is configurable; default `saola-lockscreen`. The daemon
   must not hardcode more knowledge of the locker than "a command to spawn".
 - **Failure severity order (binding, mirrors the lockscreen's):**

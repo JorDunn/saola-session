@@ -76,14 +76,42 @@ wayland-protocols = { version = "0.32", features = ["staging", "client"] }
 # The client-side Wayland connection itself, underneath the protocol
 # bindings above. Default features only.
 wayland-client = "0.31"
-# `~/.config/saola/session.kdl` (Stage 3). Same crate, same pinned version
-# line as the panel's `panel.kdl` and the lockscreen's `lockscreen.kdl`
-# parsers — the reference Rust KDL implementation, walked by hand rather
-# than through a serde derive, matching both siblings' established
-# convention (see their `config.rs` doc comments for why: precise
-# per-knob warnings on bad values, explicit code over a derived
-# deserializer).
-kdl = "6.7.1"
+# `~/.config/saola/session.toml`. Survey, 2026-09-07 — the KDL → TOML config
+# migration, replacing Stage 1's `kdl = "6.7.1"` pick after 0.1.0 shipped.
+#   - **Why TOML now, when Stage 1 picked KDL.** Stage 1's reasoning was
+#     "match the siblings", and it was right at the time: `panel.kdl` and
+#     `lockscreen.kdl` were the whole family precedent. The family has since
+#     moved — `saola-capture` first (2026-08-08), then `saola-greeter`
+#     (13137ec, 2026-09-07) and `saola-notifications`, with `saola-panel` and
+#     `saola-lockscreen` migrating in parallel today. The same argument that
+#     put this crate on KDL now puts it on TOML: one config format across
+#     every Saola component, so an operator learns one file shape and every
+#     `config.rs` in the family reads the same way.
+#   - **Why the `0.9` line, not the newer `1.x`.** `cargo add toml` on its own
+#     resolves 1.x; every sibling is pinned to `0.9` (they unify on 0.9.12 via
+#     `saola-theme`'s `saola-tokens` crate). This daemon has no `saola-theme`
+#     dependency at all — unique among Saola components — so there is nothing
+#     here for Cargo to unify *with*; the pin is about the family reading one
+#     version line rather than about this binary's tree. Staying on `0.9`
+#     costs nothing and keeps every Saola component on one wire crate.
+#   - **Why hand-walked, no serde derive.** Unchanged from the KDL version:
+#     `config.rs` walks `toml::Table` explicitly (`table.get("locker")`,
+#     `.as_str()`, …) rather than deriving `serde::Deserialize` on
+#     `SessionConfig`. One bad knob must degrade *alone*, with a warning that
+#     names it ("lock-before-sleep \"yes\" is not a boolean — using default
+#     true"); a derived deserializer gives one "deserialize failed" for the
+#     whole document, which for this daemon means falling back on every knob
+#     at once — including `lock-before-sleep`, the one knob Architecture's
+#     severity order says must never resolve wrong. `toml`'s default features
+#     do pull `serde` in internally (that is how `Table`/`Value` get their own
+#     `Deserialize` impls); that is the crate deserializing into its own
+#     generic value tree, not this crate deriving anything.
+#   - **Not `toml_edit`.** It is the format-preserving editor (comments and
+#     whitespace round-tripped) and would serve the hand-walked posture just
+#     as well, but this module never *writes* `session.toml` — it is a
+#     read-only consumer, so format preservation buys nothing.
+# Default features (`parse`, `display`, `serde`, `std`).
+toml = "0.9"
 # Logging. Survey (2026-08-02) of `tracing` vs the siblings' plain
 # `eprintln!`:
 #   - Both `saola-panel` and `saola-lockscreen` use bare `eprintln!` for
